@@ -6,26 +6,32 @@ local HttpService = game:GetService("HttpService")
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- НАСТРОЙКИ ПО УМОЛЧАНИЮ
+-- НАСТРОЙКИ И ПЕРЕМЕННЫЕ
 local saveKey = Enum.KeyCode.G
+local toggleUIKey = Enum.KeyCode.K
 local ACTIVATION_RADIUS = 3
 local TURN_SPEED = 0.15
 local FILE_NAME = "AutoLook_Config.json"
-local GITHUB_LINK = "https://github.com/amsobruv/roblox-autolook"
+local GITHUB_LINK = "https://github.com/kikgolib/AzureLatchLineUPPPPSSSS"
 
 local savedPoints = {}
 local pointCounter = 0
-local visualObjects = {} -- Хранилище ESP и Highlight
+local visualObjects = {}
+
+local renderConnection = nil
+local inputConnection = nil
+local waitingForKeyType = nil
 
 --------------------------------------------------------------------------------
--- РАБОТА С ФАЙЛАМИ
+-- РАБОТА С ФАЙЛАМИ (JSON)
 --------------------------------------------------------------------------------
 
 local function saveToFile()
 	if not writefile then return end
 
 	local exportTable = {
-		keybind = saveKey.Name,
+		saveKey = saveKey.Name,
+		toggleUIKey = toggleUIKey.Name,
 		points = {}
 	}
 
@@ -49,12 +55,15 @@ local function loadFromFile()
 	if not readfile or not isfile or not isfile(FILE_NAME) then return end
 
 	local success, result = pcall(function()
-		return HttpService:JSONEncode(readfile(FILE_NAME))
+		return HttpService:JSONDecode(readfile(FILE_NAME))
 	end)
 
 	if success and type(result) == "table" then
-		if result.keybind and Enum.KeyCode[result.keybind] then
-			saveKey = Enum.KeyCode[result.keybind]
+		if result.saveKey and Enum.KeyCode[result.saveKey] then
+			saveKey = Enum.KeyCode[result.saveKey]
+		end
+		if result.toggleUIKey and Enum.KeyCode[result.toggleUIKey] then
+			toggleUIKey = Enum.KeyCode[result.toggleUIKey]
 		end
 
 		if result.points then
@@ -86,17 +95,21 @@ local function clearVisuals()
 		end
 	end
 	visualObjects = {}
+
+	local folder = workspace:FindFirstChild("AutoLook_Visuals")
+	if folder then
+		folder:Destroy()
+	end
 end
 
 local function updateVisuals()
 	clearVisuals()
 
-	local folder = workspace:FindFirstChild("AutoLook_Visuals") or Instance.new("Folder")
+	local folder = Instance.new("Folder")
 	folder.Name = "AutoLook_Visuals"
 	folder.Parent = workspace
 
 	for index, point in ipairs(savedPoints) do
-		-- Создаем физический анкор для точки
 		local part = Instance.new("Part")
 		part.Name = "Point_" .. index
 		part.Size = Vector3.new(1.5, 1.5, 1.5)
@@ -107,7 +120,6 @@ local function updateVisuals()
 		part.Parent = folder
 		table.insert(visualObjects, part)
 
-		-- 3D Highlight
 		if point.showHighlight then
 			local highlight = Instance.new("Highlight")
 			highlight.Adornee = part
@@ -119,7 +131,6 @@ local function updateVisuals()
 			highlight.Parent = part
 		end
 
-		-- 3D ESP (BillboardGui)
 		if point.showESP then
 			local billboard = Instance.new("BillboardGui")
 			billboard.Adornee = part
@@ -139,7 +150,6 @@ local function updateVisuals()
 			label.Text = point.name
 			label.Parent = billboard
 
-			-- Обновление дистанции
 			RunService.RenderStepped:Connect(function()
 				if part and part.Parent and localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
 					local dist = math.floor((localPlayer.Character.HumanoidRootPart.Position - point.position).Magnitude)
@@ -164,14 +174,47 @@ screenGui.Name = "AutoLookGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
+--------------------------------------------------------------------------------
+-- ПЛАВАЮЩАЯ КНОПКА ОТКРЫТИЯ/ЗАКРЫТИЯ UI (TOGGLE BUTTON)
+--------------------------------------------------------------------------------
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "OpenToggleButton"
+toggleBtn.Size = UDim2.new(0, 110, 0, 35)
+toggleBtn.Position = UDim2.new(0, 20, 0.2, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
+toggleBtn.Text = "AutoLook [UI]"
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 14
+toggleBtn.Active = true
+toggleBtn.Draggable = true -- Перетаскивается мышкой или пальцем
+toggleBtn.Parent = screenGui
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleBtn
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Color = Color3.fromRGB(80, 80, 100)
+btnStroke.Thickness = 1.5
+btnStroke.Parent = toggleBtn
+
+--------------------------------------------------------------------------------
+-- ГЛАВНОЕ ОКНО
+--------------------------------------------------------------------------------
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 380)
-mainFrame.Position = UDim2.new(0, 20, 0.5, -190)
+mainFrame.Size = UDim2.new(0, 310, 0, 420)
+mainFrame.Position = UDim2.new(0, 20, 0.5, -210)
 mainFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 33)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
+
+-- Связка нажатия плавающей кнопки с видимостью главного окна
+toggleBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = not mainFrame.Visible
+end)
 
 -- Вкладки (Tabs)
 local tabFrame = Instance.new("Frame")
@@ -199,21 +242,21 @@ configTabBtn.Font = Enum.Font.SourceSansBold
 configTabBtn.TextSize = 15
 configTabBtn.Parent = tabFrame
 
--- Контейнеры для содержимого
 local pointsPage = Instance.new("Frame")
 pointsPage.Size = UDim2.new(1, -10, 1, -45)
 pointsPage.Position = UDim2.new(0, 5, 0, 40)
 pointsPage.BackgroundTransparency = 1
 pointsPage.Parent = mainFrame
 
-local configPage = Instance.new("Frame")
+local configPage = Instance.new("ScrollingFrame")
 configPage.Size = UDim2.new(1, -10, 1, -45)
 configPage.Position = UDim2.new(0, 5, 0, 40)
 configPage.BackgroundTransparency = 1
+configPage.CanvasSize = UDim2.new(0, 0, 0, 460)
+configPage.ScrollBarThickness = 6
 configPage.Visible = false
 configPage.Parent = mainFrame
 
--- Переключение вкладок
 pointsTabBtn.MouseButton1Click:Connect(function()
 	pointsPage.Visible = true
 	configPage.Visible = false
@@ -264,7 +307,6 @@ local function refreshUI()
 		card.BorderSizePixel = 0
 		card.Parent = scrollFrame
 
-		-- Переименование
 		local nameBox = Instance.new("TextBox")
 		nameBox.Size = UDim2.new(0.6, 0, 0, 25)
 		nameBox.Position = UDim2.new(0, 5, 0, 5)
@@ -285,7 +327,6 @@ local function refreshUI()
 			end
 		end)
 
-		-- Кнопка удаления
 		local delBtn = Instance.new("TextButton")
 		delBtn.Size = UDim2.new(0.35, -5, 0, 25)
 		delBtn.Position = UDim2.new(0.65, 0, 0, 5)
@@ -303,7 +344,6 @@ local function refreshUI()
 			refreshUI()
 		end)
 
-		-- Переключатели ESP и Highlight
 		local espToggle = Instance.new("TextButton")
 		espToggle.Size = UDim2.new(0.3, 0, 0, 25)
 		espToggle.Position = UDim2.new(0, 5, 0, 35)
@@ -338,7 +378,6 @@ local function refreshUI()
 			refreshUI()
 		end)
 
-		-- Кнопка смены цвета
 		local colorBtn = Instance.new("TextButton")
 		colorBtn.Size = UDim2.new(0.3, -5, 0, 25)
 		colorBtn.Position = UDim2.new(0.68, 0, 0, 35)
@@ -349,7 +388,6 @@ local function refreshUI()
 		colorBtn.TextSize = 12
 		colorBtn.Parent = card
 
-		-- Быстрая смена палитры при клике
 		local colors = {Color3.fromRGB(255, 200, 0), Color3.fromRGB(0, 255, 150), Color3.fromRGB(255, 50, 50), Color3.fromRGB(50, 150, 255), Color3.fromRGB(200, 50, 255)}
 		local colorIdx = 1
 		colorBtn.MouseButton1Click:Connect(function()
@@ -366,52 +404,115 @@ end
 -- ВКЛАДКА "CONFIG"
 --------------------------------------------------------------------------------
 
--- Настройка Keybind
-local keyLabel = Instance.new("TextLabel")
-keyLabel.Size = UDim2.new(1, 0, 0, 25)
-keyLabel.Position = UDim2.new(0, 0, 0, 10)
-keyLabel.BackgroundTransparency = 1
-keyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-keyLabel.Text = "Клавиша записи точек:"
-keyLabel.Font = Enum.Font.SourceSansBold
-keyLabel.TextSize = 15
-keyLabel.Parent = configPage
+local saveKeyLabel = Instance.new("TextLabel")
+saveKeyLabel.Size = UDim2.new(1, 0, 0, 20)
+saveKeyLabel.Position = UDim2.new(0, 0, 0, 5)
+saveKeyLabel.BackgroundTransparency = 1
+saveKeyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+saveKeyLabel.Text = "Клавиша записи точки:"
+saveKeyLabel.Font = Enum.Font.SourceSansBold
+saveKeyLabel.TextSize = 14
+saveKeyLabel.Parent = configPage
 
-local keyBtn = Instance.new("TextButton")
-keyBtn.Size = UDim2.new(1, 0, 0, 30)
-keyBtn.Position = UDim2.new(0, 0, 0, 40)
-keyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-keyBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
-keyBtn.Text = "[" .. saveKey.Name .. "]"
-keyBtn.Font = Enum.Font.SourceSansBold
-keyBtn.TextSize = 16
-keyBtn.Parent = configPage
+local saveKeyBtn = Instance.new("TextButton")
+saveKeyBtn.Size = UDim2.new(1, -10, 0, 28)
+saveKeyBtn.Position = UDim2.new(0, 0, 0, 28)
+saveKeyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+saveKeyBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
+saveKeyBtn.Text = "[" .. saveKey.Name .. "]"
+saveKeyBtn.Font = Enum.Font.SourceSansBold
+saveKeyBtn.TextSize = 15
+saveKeyBtn.Parent = configPage
 
-local waitingForKey = false
-keyBtn.MouseButton1Click:Connect(function()
-	waitingForKey = true
-	keyBtn.Text = "Нажмите любую клавишу..."
+saveKeyBtn.MouseButton1Click:Connect(function()
+	waitingForKeyType = "save"
+	saveKeyBtn.Text = "Нажмите клавишу..."
 end)
 
--- Ссылка на GitHub
+local toggleKeyLabel = Instance.new("TextLabel")
+toggleKeyLabel.Size = UDim2.new(1, 0, 0, 20)
+toggleKeyLabel.Position = UDim2.new(0, 0, 0, 65)
+toggleKeyLabel.BackgroundTransparency = 1
+toggleKeyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleKeyLabel.Text = "Клавиша скрыть/показать UI:"
+toggleKeyLabel.Font = Enum.Font.SourceSansBold
+toggleKeyLabel.TextSize = 14
+toggleKeyLabel.Parent = configPage
+
+local toggleKeyBtn = Instance.new("TextButton")
+toggleKeyBtn.Size = UDim2.new(1, -10, 0, 28)
+toggleKeyBtn.Position = UDim2.new(0, 0, 0, 88)
+toggleKeyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+toggleKeyBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
+toggleKeyBtn.Text = "[" .. toggleUIKey.Name .. "]"
+toggleKeyBtn.Font = Enum.Font.SourceSansBold
+toggleKeyBtn.TextSize = 15
+toggleKeyBtn.Parent = configPage
+
+toggleKeyBtn.MouseButton1Click:Connect(function()
+	waitingForKeyType = "toggle"
+	toggleKeyBtn.Text = "Нажмите клавишу..."
+end)
+
+local hideUiBtn = Instance.new("TextButton")
+hideUiBtn.Size = UDim2.new(1, -10, 0, 30)
+hideUiBtn.Position = UDim2.new(0, 0, 0, 130)
+hideUiBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
+hideUiBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+hideUiBtn.Text = "Скрыть меню (Hide UI)"
+hideUiBtn.Font = Enum.Font.SourceSansBold
+hideUiBtn.TextSize = 14
+hideUiBtn.Parent = configPage
+
+hideUiBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = not mainFrame.Visible
+end)
+
+local clearAllBtn = Instance.new("TextButton")
+clearAllBtn.Size = UDim2.new(1, -10, 0, 30)
+clearAllBtn.Position = UDim2.new(0, 0, 0, 170)
+clearAllBtn.BackgroundColor3 = Color3.fromRGB(180, 80, 30)
+clearAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+clearAllBtn.Text = "Удалить все точки"
+clearAllBtn.Font = Enum.Font.SourceSansBold
+clearAllBtn.TextSize = 14
+clearAllBtn.Parent = configPage
+
+clearAllBtn.MouseButton1Click:Connect(function()
+	savedPoints = {}
+	saveToFile()
+	updateVisuals()
+	refreshUI()
+end)
+
+local unloadBtn = Instance.new("TextButton")
+unloadBtn.Size = UDim2.new(1, -10, 0, 32)
+unloadBtn.Position = UDim2.new(0, 0, 0, 210)
+unloadBtn.BackgroundColor3 = Color3.fromRGB(190, 40, 40)
+unloadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+unloadBtn.Text = "Выключить скрипт полностью"
+unloadBtn.Font = Enum.Font.SourceSansBold
+unloadBtn.TextSize = 14
+unloadBtn.Parent = configPage
+
 local ghLabel = Instance.new("TextLabel")
-ghLabel.Size = UDim2.new(1, 0, 0, 25)
-ghLabel.Position = UDim2.new(0, 0, 0, 90)
+ghLabel.Size = UDim2.new(1, 0, 0, 20)
+ghLabel.Position = UDim2.new(0, 0, 0, 255)
 ghLabel.BackgroundTransparency = 1
 ghLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-ghLabel.Text = "GitHub Репозиторий (клик для копирования):"
+ghLabel.Text = "GitHub (клик для копирования):"
 ghLabel.Font = Enum.Font.SourceSansBold
-ghLabel.TextSize = 14
+ghLabel.TextSize = 13
 ghLabel.Parent = configPage
 
 local ghBox = Instance.new("TextBox")
-ghBox.Size = UDim2.new(1, 0, 0, 30)
-ghBox.Position = UDim2.new(0, 0, 0, 120)
+ghBox.Size = UDim2.new(1, -10, 0, 28)
+ghBox.Position = UDim2.new(0, 0, 0, 278)
 ghBox.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
 ghBox.TextColor3 = Color3.fromRGB(100, 180, 255)
 ghBox.Text = GITHUB_LINK
 ghBox.Font = Enum.Font.SourceSans
-ghBox.TextSize = 13
+ghBox.TextSize = 12
 ghBox.ClearTextOnFocus = false
 ghBox.Parent = configPage
 
@@ -424,20 +525,29 @@ ghBox.Focused:Connect(function()
 	end
 end)
 
--- Авторство (made by amsobruv)
 local creditsLabel = Instance.new("TextLabel")
-creditsLabel.Size = UDim2.new(1, 0, 0, 30)
-creditsLabel.Position = UDim2.new(0, 0, 1, -35)
+creditsLabel.Size = UDim2.new(1, 0, 0, 25)
+creditsLabel.Position = UDim2.new(0, 0, 0, 315)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.TextColor3 = Color3.fromRGB(150, 150, 160)
 creditsLabel.Text = "made by amsobruv"
 creditsLabel.Font = Enum.Font.SourceSansItalic
-creditsLabel.TextSize = 16
+creditsLabel.TextSize = 15
 creditsLabel.Parent = configPage
 
 --------------------------------------------------------------------------------
--- ЛОГИКА СОХРАНЕНИЯ И ВВОДА
+-- ЛОГИКА СОХРАНЕНИЯ, ВЫКЛЮЧЕНИЯ И ВВОДА
 --------------------------------------------------------------------------------
+
+local function unloadScript()
+	if renderConnection then renderConnection:Disconnect() end
+	if inputConnection then inputConnection:Disconnect() end
+	clearVisuals()
+	if screenGui then screenGui:Destroy() end
+	print("[AutoLook] Скрипт полностью выключен!")
+end
+
+unloadBtn.MouseButton1Click:Connect(unloadScript)
 
 local function saveCurrentLocation()
 	local character = localPlayer.Character
@@ -463,8 +573,8 @@ loadFromFile()
 updateVisuals()
 refreshUI()
 
--- Проверка дистанции для автоповорота
-RunService.RenderStepped:Connect(function()
+-- Проверка расстояния
+renderConnection = RunService.RenderStepped:Connect(function()
 	local character = localPlayer.Character
 	if not character or not character:FindFirstChild("HumanoidRootPart") then return end
 
@@ -480,19 +590,26 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- Ввод клавиш
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+-- Ввод с клавиатуры
+inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 
-	if waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
-		saveKey = input.KeyCode
-		keyBtn.Text = "[" .. saveKey.Name .. "]"
-		waitingForKey = false
+	if waitingForKeyType and input.UserInputType == Enum.UserInputType.Keyboard then
+		if waitingForKeyType == "save" then
+			saveKey = input.KeyCode
+			saveKeyBtn.Text = "[" .. saveKey.Name .. "]"
+		elseif waitingForKeyType == "toggle" then
+			toggleUIKey = input.KeyCode
+			toggleKeyBtn.Text = "[" .. toggleUIKey.Name .. "]"
+		end
+		waitingForKeyType = nil
 		saveToFile()
 		return
 	end
 
 	if input.KeyCode == saveKey then
 		saveCurrentLocation()
+	elseif input.KeyCode == toggleUIKey then
+		mainFrame.Visible = not mainFrame.Visible
 	end
 end)
