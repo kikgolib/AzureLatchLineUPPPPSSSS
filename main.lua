@@ -1,3 +1,14 @@
+Вот обновленный код. Теперь для каждой точки можно индивидуально настраивать **размер хитбокса (радиус активации)** прямо в карточке точки.
+
+### Что было добавлено и изменено:
+
+1. **Перевод**: В языковые словари добавлено новое поле `hitbox` ("Hitbox" / "Хитбокс").
+2. **Логика точки**: В структуры точек добавлено свойство `hitbox` (по умолчанию `3` метра).
+3. **Сохранение/Загрузка**: Значение хитбокса сохраняется в файл конфигурации `JSON`.
+4. **Интерфейс**: Размеры карточек увеличены (`120px`), и добавлено текстовое поле ввода для изменения хитбокса.
+5. **Проверка расстояния**: Теперь `RenderStepped` использует персональный хитбокс каждой точки вместо глобального значения.
+
+```lua
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -6,14 +17,15 @@ local HttpService = game:GetService("HttpService")
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- НАСТРОЙКИ И ПЕРЕМЕННЫЕ
 local saveKey = Enum.KeyCode.G
 local toggleUIKey = Enum.KeyCode.K
-local ACTIVATION_RADIUS = 3
+local DEFAULT_ACTIVATION_RADIUS = 3
 local TURN_SPEED = 0.15
 local FILE_NAME = "AutoLook_Config.json"
 local GITHUB_LINK = "https://github.com/kikgolib/AzureLatchLineUPPPPSSSS"
 
+local currentLang = "EN"
+local currentTheme = "Obsidian"
 local savedPoints = {}
 local pointCounter = 0
 local visualObjects = {}
@@ -22,9 +34,102 @@ local renderConnection = nil
 local inputConnection = nil
 local waitingForKeyType = nil
 
---------------------------------------------------------------------------------
--- РАБОТА С ФАЙЛАМИ (JSON)
---------------------------------------------------------------------------------
+local themes = {
+	Obsidian = {
+		mainBg = Color3.fromRGB(15, 16, 20),
+		topBg = Color3.fromRGB(22, 24, 30),
+		cardBg = Color3.fromRGB(26, 28, 36),
+		accent = Color3.fromRGB(88, 101, 242),
+		text = Color3.fromRGB(240, 240, 245),
+		subText = Color3.fromRGB(140, 145, 160),
+		border = Color3.fromRGB(35, 38, 50)
+	},
+	Midnight = {
+		mainBg = Color3.fromRGB(16, 12, 26),
+		topBg = Color3.fromRGB(24, 18, 40),
+		cardBg = Color3.fromRGB(32, 24, 52),
+		accent = Color3.fromRGB(168, 85, 247),
+		text = Color3.fromRGB(245, 240, 255),
+		subText = Color3.fromRGB(160, 140, 190),
+		border = Color3.fromRGB(48, 36, 75)
+	},
+	Cyber = {
+		mainBg = Color3.fromRGB(10, 15, 20),
+		topBg = Color3.fromRGB(15, 24, 32),
+		cardBg = Color3.fromRGB(20, 32, 44),
+		accent = Color3.fromRGB(0, 230, 180),
+		text = Color3.fromRGB(230, 255, 250),
+		subText = Color3.fromRGB(100, 170, 170),
+		border = Color3.fromRGB(30, 55, 70)
+	},
+	OLED = {
+		mainBg = Color3.fromRGB(0, 0, 0),
+		topBg = Color3.fromRGB(10, 10, 10),
+		cardBg = Color3.fromRGB(18, 18, 18),
+		accent = Color3.fromRGB(255, 255, 255),
+		text = Color3.fromRGB(255, 255, 255),
+		subText = Color3.fromRGB(130, 130, 130),
+		border = Color3.fromRGB(35, 35, 35)
+	}
+}
+
+local translations = {
+	EN = {
+		pointsTab = "Points",
+		configTab = "Settings",
+		delete = "Delete",
+		color = "Color",
+		shape = "Shape",
+		sq = "Square",
+		ci = "Circle",
+		tr = "Triangle",
+		im = "Image",
+		imgPlaceholder = "Asset ID...",
+		hitboxLbl = "Hitbox (m):",
+		saveKeyLbl = "Save Key",
+		toggleKeyLbl = "Menu Key",
+		langLbl = "Language",
+		themeLbl = "UI Theme",
+		hideUi = "Minimize UI",
+		clearAll = "Clear All Points",
+		unload = "Unload",
+		pressKey = "Press key...",
+		copied = "Copied!"
+	},
+	RU = {
+		pointsTab = "Точки",
+		configTab = "Настройки",
+		delete = "Удалить",
+		color = "Цвет",
+		shape = "Форма",
+		sq = "Квадрат",
+		ci = "Круг",
+		tr = "Треугольник",
+		im = "Картинка",
+		imgPlaceholder = "Asset ID...",
+		hitboxLbl = "Хитбокс (м):",
+		saveKeyLbl = "Бинд сохранения",
+		toggleKeyLbl = "Бинд меню",
+		langLbl = "Язык",
+		themeLbl = "Тема UI",
+		hideUi = "Скрыть UI",
+		clearAll = "Очистить точки",
+		unload = "Выгрузить",
+		pressKey = "Нажмите...",
+		copied = "Скопировано!"
+	}
+}
+
+local function t(key)
+	return (translations[currentLang] and translations[currentLang][key]) or translations["EN"][key] or ""
+end
+
+local function parseAssetId(input)
+	if not input or input == "" then return "" end
+	local id = input:match("%d+")
+	if id then return "rbxassetid://" .. id end
+	return input
+end
 
 local function saveToFile()
 	if not writefile then return end
@@ -32,6 +137,8 @@ local function saveToFile()
 	local exportTable = {
 		saveKey = saveKey.Name,
 		toggleUIKey = toggleUIKey.Name,
+		language = currentLang,
+		theme = currentTheme,
 		points = {}
 	}
 
@@ -42,7 +149,10 @@ local function saveToFile()
 			cameraCFrame = {point.cameraCFrame:GetComponents()},
 			color = {point.color.R, point.color.G, point.color.B},
 			showESP = point.showESP,
-			showHighlight = point.showHighlight
+			showHighlight = point.showHighlight,
+			shape = point.shape or "Square",
+			imageId = point.imageId or "",
+			hitbox = point.hitbox or DEFAULT_ACTIVATION_RADIUS
 		})
 	end
 
@@ -59,6 +169,12 @@ local function loadFromFile()
 	end)
 
 	if success and type(result) == "table" then
+		if result.language and (result.language == "EN" or result.language == "RU") then
+			currentLang = result.language
+		end
+		if result.theme and themes[result.theme] then
+			currentTheme = result.theme
+		end
 		if result.saveKey and Enum.KeyCode[result.saveKey] then
 			saveKey = Enum.KeyCode[result.saveKey]
 		end
@@ -76,7 +192,10 @@ local function loadFromFile()
 					cameraCFrame = CFrame.new(unpack(item.cameraCFrame)),
 					color = Color3.new(col[1], col[2], col[3]),
 					showESP = item.showESP ~= false,
-					showHighlight = item.showHighlight ~= false
+					showHighlight = item.showHighlight ~= false,
+					shape = item.shape or "Square",
+					imageId = item.imageId or "",
+					hitbox = tonumber(item.hitbox) or DEFAULT_ACTIVATION_RADIUS
 				})
 			end
 			pointCounter = #savedPoints
@@ -84,22 +203,14 @@ local function loadFromFile()
 	end
 end
 
---------------------------------------------------------------------------------
--- УПРАВЛЕНИЕ 3D ВИЗУАЛОМ (ESP / HIGHLIGHT)
---------------------------------------------------------------------------------
-
 local function clearVisuals()
 	for _, obj in pairs(visualObjects) do
-		if obj and obj.Parent then
-			obj:Destroy()
-		end
+		if obj and obj.Parent then obj:Destroy() end
 	end
 	visualObjects = {}
 
 	local folder = workspace:FindFirstChild("AutoLook_Visuals")
-	if folder then
-		folder:Destroy()
-	end
+	if folder then folder:Destroy() end
 end
 
 local function updateVisuals()
@@ -110,22 +221,52 @@ local function updateVisuals()
 	folder.Parent = workspace
 
 	for index, point in ipairs(savedPoints) do
-		local part = Instance.new("Part")
+		local shapeType = point.shape or "Square"
+		local part
+
+		if shapeType == "Circle" then
+			part = Instance.new("Part")
+			part.Shape = Enum.PartType.Cylinder
+			part.Size = Vector3.new(0.2, 3, 3)
+			part.CFrame = CFrame.new(point.position - Vector3.new(0, 1.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		elseif shapeType == "Triangle" then
+			part = Instance.new("WedgePart")
+			part.Size = Vector3.new(1.8, 1.8, 1.8)
+			part.Position = point.position
+		else
+			part = Instance.new("Part")
+			part.Shape = Enum.PartType.Block
+			part.Size = Vector3.new(1.5, 1.5, 1.5)
+			part.Position = point.position
+		end
+
 		part.Name = "Point_" .. index
-		part.Size = Vector3.new(1.5, 1.5, 1.5)
-		part.Position = point.position
 		part.Anchored = true
 		part.CanCollide = false
-		part.Transparency = 1
+		part.Material = Enum.Material.SmoothPlastic
+		part.Color = point.color
+		part.Transparency = point.showHighlight and 0.3 or 1
 		part.Parent = folder
 		table.insert(visualObjects, part)
+
+		if shapeType == "Image" or (point.imageId and point.imageId ~= "") then
+			local decalAsset = parseAssetId(point.imageId)
+			if decalAsset ~= "" then
+				for _, face in ipairs(Enum.NormalId:GetEnumItems()) do
+					local decal = Instance.new("Decal")
+					decal.Texture = decalAsset
+					decal.Face = face
+					decal.Parent = part
+				end
+			end
+		end
 
 		if point.showHighlight then
 			local highlight = Instance.new("Highlight")
 			highlight.Adornee = part
 			highlight.FillColor = point.color
 			highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-			highlight.FillTransparency = 0.5
+			highlight.FillTransparency = 0.4
 			highlight.OutlineTransparency = 0
 			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 			highlight.Parent = part
@@ -134,8 +275,8 @@ local function updateVisuals()
 		if point.showESP then
 			local billboard = Instance.new("BillboardGui")
 			billboard.Adornee = part
-			billboard.Size = UDim2.new(0, 120, 0, 40)
-			billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+			billboard.Size = UDim2.new(0, 140, 0, 40)
+			billboard.StudsOffset = Vector3.new(0, 2.2, 0)
 			billboard.AlwaysOnTop = true
 			billboard.Parent = part
 
@@ -145,8 +286,8 @@ local function updateVisuals()
 			label.TextColor3 = point.color
 			label.TextStrokeTransparency = 0
 			label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-			label.Font = Enum.Font.SourceSansBold
-			label.TextSize = 14
+			label.Font = Enum.Font.GothamBold
+			label.TextSize = 13
 			label.Text = point.name
 			label.Parent = billboard
 
@@ -160,10 +301,6 @@ local function updateVisuals()
 	end
 end
 
---------------------------------------------------------------------------------
--- ИНТЕРФЕЙС (GUI)
---------------------------------------------------------------------------------
-
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 if playerGui:FindFirstChild("AutoLookGui") then
 	playerGui.AutoLookGui:Destroy()
@@ -174,116 +311,178 @@ screenGui.Name = "AutoLookGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
---------------------------------------------------------------------------------
--- ПЛАВАЮЩАЯ КНОПКА ОТКРЫТИЯ/ЗАКРЫТИЯ UI (TOGGLE BUTTON)
---------------------------------------------------------------------------------
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Name = "OpenToggleButton"
-toggleBtn.Size = UDim2.new(0, 110, 0, 35)
+toggleBtn.Size = UDim2.new(0, 42, 0, 42)
 toggleBtn.Position = UDim2.new(0, 20, 0.2, 0)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-toggleBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
-toggleBtn.Text = "AutoLook [UI]"
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 14
+toggleBtn.BackgroundColor3 = themes[currentTheme].topBg
+toggleBtn.TextColor3 = themes[currentTheme].accent
+toggleBtn.Text = "⚡"
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 18
 toggleBtn.Active = true
-toggleBtn.Draggable = true -- Перетаскивается мышкой или пальцем
+toggleBtn.Draggable = true
 toggleBtn.Parent = screenGui
 
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent = toggleBtn
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 10)
+toggleCorner.Parent = toggleBtn
 
-local btnStroke = Instance.new("UIStroke")
-btnStroke.Color = Color3.fromRGB(80, 80, 100)
-btnStroke.Thickness = 1.5
-btnStroke.Parent = toggleBtn
+local toggleStroke = Instance.new("UIStroke")
+toggleStroke.Color = themes[currentTheme].border
+toggleStroke.Thickness = 1
+toggleStroke.Parent = toggleBtn
 
---------------------------------------------------------------------------------
--- ГЛАВНОЕ ОКНО
---------------------------------------------------------------------------------
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 310, 0, 420)
-mainFrame.Position = UDim2.new(0, 20, 0.5, -210)
-mainFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 33)
+mainFrame.Size = UDim2.new(0, 360, 0, 430)
+mainFrame.Position = UDim2.new(0, 20, 0.5, -215)
+mainFrame.BackgroundColor3 = themes[currentTheme].mainBg
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
--- Связка нажатия плавающей кнопки с видимостью главного окна
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = themes[currentTheme].border
+mainStroke.Thickness = 1
+mainStroke.Parent = mainFrame
+
 toggleBtn.MouseButton1Click:Connect(function()
 	mainFrame.Visible = not mainFrame.Visible
 end)
 
--- Вкладки (Tabs)
-local tabFrame = Instance.new("Frame")
-tabFrame.Size = UDim2.new(1, 0, 0, 35)
-tabFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
-tabFrame.BorderSizePixel = 0
-tabFrame.Parent = mainFrame
+local headerFrame = Instance.new("Frame")
+headerFrame.Size = UDim2.new(1, 0, 0, 40)
+headerFrame.BackgroundColor3 = themes[currentTheme].topBg
+headerFrame.BorderSizePixel = 0
+headerFrame.Parent = mainFrame
+
+local headerCorner = Instance.new("UICorner")
+headerCorner.CornerRadius = UDim.new(0, 10)
+headerCorner.Parent = headerFrame
+
+local headerFix = Instance.new("Frame")
+headerFix.Size = UDim2.new(1, 0, 0, 10)
+headerFix.Position = UDim2.new(0, 0, 1, -10)
+headerFix.BackgroundColor3 = themes[currentTheme].topBg
+headerFix.BorderSizePixel = 0
+headerFix.Parent = headerFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 120, 1, 0)
+titleLabel.Position = UDim2.new(0, 14, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "AUTOLOOK"
+titleLabel.TextColor3 = themes[currentTheme].text
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 13
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = headerFrame
+
+local accentLine = Instance.new("Frame")
+accentLine.Size = UDim2.new(1, 0, 0, 2)
+accentLine.Position = UDim2.new(0, 0, 1, 0)
+accentLine.BackgroundColor3 = themes[currentTheme].accent
+accentLine.BorderSizePixel = 0
+accentLine.Parent = headerFrame
+
+local navFrame = Instance.new("Frame")
+navFrame.Size = UDim2.new(0, 100, 1, -42)
+navFrame.Position = UDim2.new(0, 0, 0, 42)
+navFrame.BackgroundColor3 = themes[currentTheme].topBg
+navFrame.BorderSizePixel = 0
+navFrame.Parent = mainFrame
+
+local navDivider = Instance.new("Frame")
+navDivider.Size = UDim2.new(0, 1, 1, 0)
+navDivider.Position = UDim2.new(1, 0, 0, 0)
+navDivider.BackgroundColor3 = themes[currentTheme].border
+navDivider.BorderSizePixel = 0
+navDivider.Parent = navFrame
 
 local pointsTabBtn = Instance.new("TextButton")
-pointsTabBtn.Size = UDim2.new(0.5, 0, 1, 0)
-pointsTabBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-pointsTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-pointsTabBtn.Text = "Точки"
-pointsTabBtn.Font = Enum.Font.SourceSansBold
-pointsTabBtn.TextSize = 15
-pointsTabBtn.Parent = tabFrame
+pointsTabBtn.Size = UDim2.new(1, -12, 0, 32)
+pointsTabBtn.Position = UDim2.new(0, 6, 0, 10)
+pointsTabBtn.BackgroundColor3 = themes[currentTheme].cardBg
+pointsTabBtn.TextColor3 = themes[currentTheme].text
+pointsTabBtn.Font = Enum.Font.GothamBold
+pointsTabBtn.TextSize = 11
+pointsTabBtn.Parent = navFrame
+
+local ptCorner = Instance.new("UICorner")
+ptCorner.CornerRadius = UDim.new(0, 6)
+ptCorner.Parent = pointsTabBtn
 
 local configTabBtn = Instance.new("TextButton")
-configTabBtn.Size = UDim2.new(0.5, 0, 1, 0)
-configTabBtn.Position = UDim2.new(0.5, 0, 0, 0)
-configTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
-configTabBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
-configTabBtn.Text = "Config"
-configTabBtn.Font = Enum.Font.SourceSansBold
-configTabBtn.TextSize = 15
-configTabBtn.Parent = tabFrame
+configTabBtn.Size = UDim2.new(1, -12, 0, 32)
+configTabBtn.Position = UDim2.new(0, 6, 0, 48)
+configTabBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+configTabBtn.BackgroundTransparency = 1
+configTabBtn.TextColor3 = themes[currentTheme].subText
+configTabBtn.Font = Enum.Font.GothamMedium
+configTabBtn.TextSize = 11
+configTabBtn.Parent = navFrame
+
+local cfgCorner = Instance.new("UICorner")
+cfgCorner.CornerRadius = UDim.new(0, 6)
+cfgCorner.Parent = configTabBtn
+
+local contentArea = Instance.new("Frame")
+contentArea.Size = UDim2.new(1, -108, 1, -50)
+contentArea.Position = UDim2.new(0, 104, 0, 46)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
 
 local pointsPage = Instance.new("Frame")
-pointsPage.Size = UDim2.new(1, -10, 1, -45)
-pointsPage.Position = UDim2.new(0, 5, 0, 40)
+pointsPage.Size = UDim2.new(1, 0, 1, 0)
 pointsPage.BackgroundTransparency = 1
-pointsPage.Parent = mainFrame
+pointsPage.Parent = contentArea
 
 local configPage = Instance.new("ScrollingFrame")
-configPage.Size = UDim2.new(1, -10, 1, -45)
-configPage.Position = UDim2.new(0, 5, 0, 40)
+configPage.Size = UDim2.new(1, 0, 1, 0)
 configPage.BackgroundTransparency = 1
-configPage.CanvasSize = UDim2.new(0, 0, 0, 460)
-configPage.ScrollBarThickness = 6
+configPage.CanvasSize = UDim2.new(0, 0, 0, 420)
+configPage.ScrollBarThickness = 2
+configPage.ScrollBarImageColor3 = themes[currentTheme].accent
 configPage.Visible = false
-configPage.Parent = mainFrame
+configPage.Parent = contentArea
 
 pointsTabBtn.MouseButton1Click:Connect(function()
 	pointsPage.Visible = true
 	configPage.Visible = false
-	pointsTabBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-	pointsTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	configTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
-	configTabBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+	pointsTabBtn.BackgroundColor3 = themes[currentTheme].cardBg
+	pointsTabBtn.BackgroundTransparency = 0
+	pointsTabBtn.TextColor3 = themes[currentTheme].text
+	pointsTabBtn.Font = Enum.Font.GothamBold
+
+	configTabBtn.BackgroundTransparency = 1
+	configTabBtn.TextColor3 = themes[currentTheme].subText
+	configTabBtn.Font = Enum.Font.GothamMedium
 end)
 
 configTabBtn.MouseButton1Click:Connect(function()
 	pointsPage.Visible = false
 	configPage.Visible = true
-	configTabBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-	configTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	pointsTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
-	pointsTabBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+	configTabBtn.BackgroundColor3 = themes[currentTheme].cardBg
+	configTabBtn.BackgroundTransparency = 0
+	configTabBtn.TextColor3 = themes[currentTheme].text
+	configTabBtn.Font = Enum.Font.GothamBold
+
+	pointsTabBtn.BackgroundTransparency = 1
+	pointsTabBtn.TextColor3 = themes[currentTheme].subText
+	pointsTabBtn.Font = Enum.Font.GothamMedium
 end)
 
---------------------------------------------------------------------------------
--- ВКЛАДКА "ТОЧКИ"
---------------------------------------------------------------------------------
-
 local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, 0, 1, 0)
+scrollFrame.Size = UDim2.new(1, -6, 1, 0)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-scrollFrame.ScrollBarThickness = 6
+scrollFrame.ScrollBarThickness = 2
+scrollFrame.ScrollBarImageColor3 = themes[currentTheme].accent
 scrollFrame.Parent = pointsPage
 
 local listLayout = Instance.new("UIListLayout")
@@ -295,27 +494,301 @@ listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
 end)
 
-local function refreshUI()
+local shapeOrder = {"Square", "Circle", "Triangle", "Image"}
+
+local function getShapeName(shapeKey)
+	if shapeKey == "Circle" then return t("ci")
+	elseif shapeKey == "Triangle" then return t("tr")
+	elseif shapeKey == "Image" then return t("im")
+	else return t("sq") end
+end
+
+local refreshUI
+
+local function createRowLabel(text, posY)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -10, 0, 16)
+	label.Position = UDim2.new(0, 0, 0, posY)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = themes[currentTheme].subText
+	label.Text = text
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 10
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = configPage
+	return label
+end
+
+local saveKeyLbl = createRowLabel("", 4)
+local saveKeyBtn = Instance.new("TextButton")
+saveKeyBtn.Size = UDim2.new(1, -12, 0, 26)
+saveKeyBtn.Position = UDim2.new(0, 0, 0, 22)
+saveKeyBtn.BackgroundColor3 = themes[currentTheme].cardBg
+saveKeyBtn.TextColor3 = themes[currentTheme].accent
+saveKeyBtn.Font = Enum.Font.GothamBold
+saveKeyBtn.TextSize = 11
+saveKeyBtn.Parent = configPage
+
+local skCorner = Instance.new("UICorner")
+skCorner.CornerRadius = UDim.new(0, 5)
+skCorner.Parent = saveKeyBtn
+
+saveKeyBtn.MouseButton1Click:Connect(function()
+	waitingForKeyType = "save"
+	saveKeyBtn.Text = t("pressKey")
+end)
+
+local toggleKeyLbl = createRowLabel("", 54)
+local toggleKeyBtn = Instance.new("TextButton")
+toggleKeyBtn.Size = UDim2.new(1, -12, 0, 26)
+toggleKeyBtn.Position = UDim2.new(0, 0, 0, 72)
+toggleKeyBtn.BackgroundColor3 = themes[currentTheme].cardBg
+toggleKeyBtn.TextColor3 = themes[currentTheme].accent
+toggleKeyBtn.Font = Enum.Font.GothamBold
+toggleKeyBtn.TextSize = 11
+toggleKeyBtn.Parent = configPage
+
+local tkCorner = Instance.new("UICorner")
+tkCorner.CornerRadius = UDim.new(0, 5)
+tkCorner.Parent = toggleKeyBtn
+
+toggleKeyBtn.MouseButton1Click:Connect(function()
+	waitingForKeyType = "toggle"
+	toggleKeyBtn.Text = t("pressKey")
+end)
+
+local langLbl = createRowLabel("", 104)
+local langBtn = Instance.new("TextButton")
+langBtn.Size = UDim2.new(1, -12, 0, 26)
+langBtn.Position = UDim2.new(0, 0, 0, 122)
+langBtn.BackgroundColor3 = themes[currentTheme].cardBg
+langBtn.TextColor3 = themes[currentTheme].text
+langBtn.Font = Enum.Font.GothamMedium
+langBtn.TextSize = 11
+langBtn.Parent = configPage
+
+local lgCorner = Instance.new("UICorner")
+lgCorner.CornerRadius = UDim.new(0, 5)
+lgCorner.Parent = langBtn
+
+langBtn.MouseButton1Click:Connect(function()
+	currentLang = (currentLang == "EN") and "RU" or "EN"
+	saveToFile()
+	refreshUI()
+end)
+
+local themeLbl = createRowLabel("", 154)
+local themeBtn = Instance.new("TextButton")
+themeBtn.Size = UDim2.new(1, -12, 0, 26)
+themeBtn.Position = UDim2.new(0, 0, 0, 172)
+themeBtn.BackgroundColor3 = themes[currentTheme].cardBg
+themeBtn.TextColor3 = themes[currentTheme].text
+themeBtn.Font = Enum.Font.GothamMedium
+themeBtn.TextSize = 11
+themeBtn.Parent = configPage
+
+local tmCorner = Instance.new("UICorner")
+tmCorner.CornerRadius = UDim.new(0, 5)
+tmCorner.Parent = themeBtn
+
+local themeList = {"Obsidian", "Midnight", "Cyber", "OLED"}
+themeBtn.MouseButton1Click:Connect(function()
+	local idx = 1
+	for i, name in ipairs(themeList) do
+		if name == currentTheme then
+			idx = (i % #themeList) + 1
+			break
+		end
+	end
+	currentTheme = themeList[idx]
+	saveToFile()
+	refreshUI()
+end)
+
+local hideUiBtn = Instance.new("TextButton")
+hideUiBtn.Size = UDim2.new(1, -12, 0, 26)
+hideUiBtn.Position = UDim2.new(0, 0, 0, 208)
+hideUiBtn.BackgroundColor3 = themes[currentTheme].cardBg
+hideUiBtn.TextColor3 = themes[currentTheme].text
+hideUiBtn.Font = Enum.Font.GothamMedium
+hideUiBtn.TextSize = 11
+hideUiBtn.Parent = configPage
+
+local huCorner = Instance.new("UICorner")
+huCorner.CornerRadius = UDim.new(0, 5)
+huCorner.Parent = hideUiBtn
+
+hideUiBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = not mainFrame.Visible
+end)
+
+local clearAllBtn = Instance.new("TextButton")
+clearAllBtn.Size = UDim2.new(1, -12, 0, 26)
+clearAllBtn.Position = UDim2.new(0, 0, 0, 240)
+clearAllBtn.BackgroundColor3 = Color3.fromRGB(170, 60, 60)
+clearAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+clearAllBtn.Font = Enum.Font.GothamBold
+clearAllBtn.TextSize = 11
+clearAllBtn.Parent = configPage
+
+local caCorner = Instance.new("UICorner")
+caCorner.CornerRadius = UDim.new(0, 5)
+caCorner.Parent = clearAllBtn
+
+clearAllBtn.MouseButton1Click:Connect(function()
+	savedPoints = {}
+	saveToFile()
+	updateVisuals()
+	refreshUI()
+end)
+
+local unloadBtn = Instance.new("TextButton")
+unloadBtn.Size = UDim2.new(1, -12, 0, 26)
+unloadBtn.Position = UDim2.new(0, 0, 0, 272)
+unloadBtn.BackgroundColor3 = Color3.fromRGB(130, 35, 35)
+unloadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+unloadBtn.Font = Enum.Font.GothamBold
+unloadBtn.TextSize = 11
+unloadBtn.Parent = configPage
+
+local unCorner = Instance.new("UICorner")
+unCorner.CornerRadius = UDim.new(0, 5)
+unCorner.Parent = unloadBtn
+
+createRowLabel("GitHub", 308)
+local ghBox = Instance.new("TextBox")
+ghBox.Size = UDim2.new(1, -12, 0, 24)
+ghBox.Position = UDim2.new(0, 0, 0, 326)
+ghBox.BackgroundColor3 = themes[currentTheme].cardBg
+ghBox.TextColor3 = themes[currentTheme].accent
+ghBox.Text = GITHUB_LINK
+ghBox.Font = Enum.Font.Gotham
+ghBox.TextSize = 10
+ghBox.ClearTextOnFocus = false
+ghBox.Parent = configPage
+
+local ghCorner = Instance.new("UICorner")
+ghCorner.CornerRadius = UDim.new(0, 5)
+ghCorner.Parent = ghBox
+
+ghBox.Focused:Connect(function()
+	if setclipboard then
+		setclipboard(GITHUB_LINK)
+		ghBox.Text = t("copied")
+		task.wait(1.5)
+		ghBox.Text = GITHUB_LINK
+	end
+end)
+
+local creditsLabel = Instance.new("TextLabel")
+creditsLabel.Size = UDim2.new(1, -12, 0, 18)
+creditsLabel.Position = UDim2.new(0, 0, 0, 362)
+creditsLabel.BackgroundTransparency = 1
+creditsLabel.Text = "made by KIKGOLIB"
+creditsLabel.TextColor3 = themes[currentTheme].subText
+creditsLabel.Font = Enum.Font.GothamMedium
+creditsLabel.TextSize = 9
+creditsLabel.TextTransparency = 0.4
+creditsLabel.TextXAlignment = Enum.TextXAlignment.Center
+creditsLabel.Parent = configPage
+
+refreshUI = function()
+	local activeTheme = themes[currentTheme]
+
+	mainFrame.BackgroundColor3 = activeTheme.mainBg
+	mainStroke.Color = activeTheme.border
+
+	toggleBtn.BackgroundColor3 = activeTheme.topBg
+	toggleBtn.TextColor3 = activeTheme.accent
+	toggleStroke.Color = activeTheme.border
+
+	headerFrame.BackgroundColor3 = activeTheme.topBg
+	headerFix.BackgroundColor3 = activeTheme.topBg
+	titleLabel.TextColor3 = activeTheme.text
+	accentLine.BackgroundColor3 = activeTheme.accent
+
+	navFrame.BackgroundColor3 = activeTheme.topBg
+	navDivider.BackgroundColor3 = activeTheme.border
+
+	if pointsPage.Visible then
+		pointsTabBtn.BackgroundColor3 = activeTheme.cardBg
+		pointsTabBtn.TextColor3 = activeTheme.text
+		configTabBtn.TextColor3 = activeTheme.subText
+	else
+		configTabBtn.BackgroundColor3 = activeTheme.cardBg
+		configTabBtn.TextColor3 = activeTheme.text
+		pointsTabBtn.TextColor3 = activeTheme.subText
+	end
+
+	pointsTabBtn.Text = t("pointsTab")
+	configTabBtn.Text = t("configTab")
+
+	saveKeyLbl.Text = t("saveKeyLbl")
+	saveKeyLbl.TextColor3 = activeTheme.subText
+	saveKeyBtn.Text = "[" .. saveKey.Name .. "]"
+	saveKeyBtn.BackgroundColor3 = activeTheme.cardBg
+	saveKeyBtn.TextColor3 = activeTheme.accent
+
+	toggleKeyLbl.Text = t("toggleKeyLbl")
+	toggleKeyLbl.TextColor3 = activeTheme.subText
+	toggleKeyBtn.Text = "[" .. toggleUIKey.Name .. "]"
+	toggleKeyBtn.BackgroundColor3 = activeTheme.cardBg
+	toggleKeyBtn.TextColor3 = activeTheme.accent
+
+	langLbl.Text = t("langLbl")
+	langLbl.TextColor3 = activeTheme.subText
+	langBtn.Text = (currentLang == "EN") and "English" or "Русский"
+	langBtn.BackgroundColor3 = activeTheme.cardBg
+	langBtn.TextColor3 = activeTheme.text
+
+	themeLbl.Text = t("themeLbl")
+	themeLbl.TextColor3 = activeTheme.subText
+	themeBtn.Text = currentTheme
+	themeBtn.BackgroundColor3 = activeTheme.cardBg
+	themeBtn.TextColor3 = activeTheme.text
+
+	hideUiBtn.Text = t("hideUi")
+	hideUiBtn.BackgroundColor3 = activeTheme.cardBg
+	hideUiBtn.TextColor3 = activeTheme.text
+
+	clearAllBtn.Text = t("clearAll")
+	unloadBtn.Text = t("unload")
+
+	ghBox.BackgroundColor3 = activeTheme.cardBg
+	ghBox.TextColor3 = activeTheme.accent
+	creditsLabel.TextColor3 = activeTheme.subText
+
+	scrollFrame.ScrollBarImageColor3 = activeTheme.accent
+	configPage.ScrollBarImageColor3 = activeTheme.accent
+
 	for _, child in ipairs(scrollFrame:GetChildren()) do
 		if child:IsA("Frame") then child:Destroy() end
 	end
 
 	for index, point in ipairs(savedPoints) do
 		local card = Instance.new("Frame")
-		card.Size = UDim2.new(1, -8, 0, 65)
-		card.BackgroundColor3 = Color3.fromRGB(42, 42, 50)
+		card.Size = UDim2.new(1, -4, 0, 120)
+		card.BackgroundColor3 = activeTheme.cardBg
 		card.BorderSizePixel = 0
 		card.Parent = scrollFrame
 
+		local cardCorner = Instance.new("UICorner")
+		cardCorner.CornerRadius = UDim.new(0, 6)
+		cardCorner.Parent = card
+
 		local nameBox = Instance.new("TextBox")
-		nameBox.Size = UDim2.new(0.6, 0, 0, 25)
+		nameBox.Size = UDim2.new(0.62, -4, 0, 22)
 		nameBox.Position = UDim2.new(0, 5, 0, 5)
-		nameBox.BackgroundColor3 = Color3.fromRGB(32, 32, 38)
+		nameBox.BackgroundColor3 = activeTheme.mainBg
 		nameBox.Text = point.name
-		nameBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-		nameBox.Font = Enum.Font.SourceSans
-		nameBox.TextSize = 14
+		nameBox.TextColor3 = activeTheme.text
+		nameBox.Font = Enum.Font.GothamMedium
+		nameBox.TextSize = 11
 		nameBox.Parent = card
+
+		local nameCorner = Instance.new("UICorner")
+		nameCorner.CornerRadius = UDim.new(0, 4)
+		nameCorner.Parent = nameBox
 
 		nameBox.FocusLost:Connect(function()
 			if nameBox.Text ~= "" then
@@ -328,14 +801,18 @@ local function refreshUI()
 		end)
 
 		local delBtn = Instance.new("TextButton")
-		delBtn.Size = UDim2.new(0.35, -5, 0, 25)
-		delBtn.Position = UDim2.new(0.65, 0, 0, 5)
-		delBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+		delBtn.Size = UDim2.new(0.38, -11, 0, 22)
+		delBtn.Position = UDim2.new(0.62, 6, 0, 5)
+		delBtn.BackgroundColor3 = Color3.fromRGB(150, 45, 45)
 		delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		delBtn.Text = "Удалить"
-		delBtn.Font = Enum.Font.SourceSansBold
-		delBtn.TextSize = 13
+		delBtn.Text = t("delete")
+		delBtn.Font = Enum.Font.GothamBold
+		delBtn.TextSize = 10
 		delBtn.Parent = card
+
+		local delCorner = Instance.new("UICorner")
+		delCorner.CornerRadius = UDim.new(0, 4)
+		delCorner.Parent = delBtn
 
 		delBtn.MouseButton1Click:Connect(function()
 			table.remove(savedPoints, index)
@@ -344,207 +821,127 @@ local function refreshUI()
 			refreshUI()
 		end)
 
-		local espToggle = Instance.new("TextButton")
-		espToggle.Size = UDim2.new(0.3, 0, 0, 25)
-		espToggle.Position = UDim2.new(0, 5, 0, 35)
-		espToggle.BackgroundColor3 = point.showESP and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(80, 80, 80)
-		espToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-		espToggle.Text = "ESP: " .. (point.showESP and "ON" or "OFF")
-		espToggle.Font = Enum.Font.SourceSans
-		espToggle.TextSize = 12
-		espToggle.Parent = card
+		local shapeBtn = Instance.new("TextButton")
+		shapeBtn.Size = UDim2.new(0.48, -4, 0, 22)
+		shapeBtn.Position = UDim2.new(0, 5, 0, 32)
+		shapeBtn.BackgroundColor3 = activeTheme.mainBg
+		shapeBtn.TextColor3 = activeTheme.subText
+		shapeBtn.Text = getShapeName(point.shape or "Square")
+		shapeBtn.Font = Enum.Font.Gotham
+		shapeBtn.TextSize = 10
+		shapeBtn.Parent = card
 
-		espToggle.MouseButton1Click:Connect(function()
-			point.showESP = not point.showESP
-			saveToFile()
-			updateVisuals()
-			refreshUI()
-		end)
+		local shapeCorner = Instance.new("UICorner")
+		shapeCorner.CornerRadius = UDim.new(0, 4)
+		shapeCorner.Parent = shapeBtn
 
-		local hlToggle = Instance.new("TextButton")
-		hlToggle.Size = UDim2.new(0.35, 0, 0, 25)
-		hlToggle.Position = UDim2.new(0.32, 0, 0, 35)
-		hlToggle.BackgroundColor3 = point.showHighlight and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(80, 80, 80)
-		hlToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-		hlToggle.Text = "Highlight: " .. (point.showHighlight and "ON" or "OFF")
-		hlToggle.Font = Enum.Font.SourceSans
-		hlToggle.TextSize = 12
-		hlToggle.Parent = card
-
-		hlToggle.MouseButton1Click:Connect(function()
-			point.showHighlight = not point.showHighlight
+		shapeBtn.MouseButton1Click:Connect(function()
+			local currentShape = point.shape or "Square"
+			local nextIdx = 1
+			for i, s in ipairs(shapeOrder) do
+				if s == currentShape then
+					nextIdx = (i % #shapeOrder) + 1
+					break
+				end
+			end
+			point.shape = shapeOrder[nextIdx]
 			saveToFile()
 			updateVisuals()
 			refreshUI()
 		end)
 
 		local colorBtn = Instance.new("TextButton")
-		colorBtn.Size = UDim2.new(0.3, -5, 0, 25)
-		colorBtn.Position = UDim2.new(0.68, 0, 0, 35)
+		colorBtn.Size = UDim2.new(0.52, -11, 0, 22)
+		colorBtn.Position = UDim2.new(0.48, 6, 0, 32)
 		colorBtn.BackgroundColor3 = point.color
-		colorBtn.Text = "Цвет"
+		colorBtn.Text = t("color")
 		colorBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-		colorBtn.Font = Enum.Font.SourceSansBold
-		colorBtn.TextSize = 12
+		colorBtn.Font = Enum.Font.GothamBold
+		colorBtn.TextSize = 10
 		colorBtn.Parent = card
 
+		local colorCorner = Instance.new("UICorner")
+		colorCorner.CornerRadius = UDim.new(0, 4)
+		colorCorner.Parent = colorBtn
+
 		local colors = {Color3.fromRGB(255, 200, 0), Color3.fromRGB(0, 255, 150), Color3.fromRGB(255, 50, 50), Color3.fromRGB(50, 150, 255), Color3.fromRGB(200, 50, 255)}
-		local colorIdx = 1
 		colorBtn.MouseButton1Click:Connect(function()
-			colorIdx = (colorIdx % #colors) + 1
+			local colorIdx = 1
+			for i, c in ipairs(colors) do
+				if c == point.color then
+					colorIdx = (i % #colors) + 1
+					break
+				end
+			end
 			point.color = colors[colorIdx]
 			saveToFile()
 			updateVisuals()
 			refreshUI()
 		end)
+
+		local imgBox = Instance.new("TextBox")
+		imgBox.Size = UDim2.new(1, -10, 0, 22)
+		imgBox.Position = UDim2.new(0, 5, 0, 59)
+		imgBox.BackgroundColor3 = activeTheme.mainBg
+		imgBox.Text = (point.imageId and point.imageId ~= "") and point.imageId or t("imgPlaceholder")
+		imgBox.TextColor3 = (point.imageId and point.imageId ~= "") and activeTheme.accent or activeTheme.subText
+		imgBox.Font = Enum.Font.Gotham
+		imgBox.TextSize = 10
+		imgBox.ClearTextOnFocus = false
+		imgBox.Parent = card
+
+		local imgCorner = Instance.new("UICorner")
+		imgCorner.CornerRadius = UDim.new(0, 4)
+		imgCorner.Parent = imgBox
+
+		imgBox.FocusLost:Connect(function()
+			point.imageId = imgBox.Text
+			saveToFile()
+			updateVisuals()
+		end)
+
+		local hitboxLabel = Instance.new("TextLabel")
+		hitboxLabel.Size = UDim2.new(0.5, -5, 0, 22)
+		hitboxLabel.Position = UDim2.new(0, 5, 0, 86)
+		hitboxLabel.BackgroundTransparency = 1
+		hitboxLabel.Text = t("hitboxLbl")
+		hitboxLabel.TextColor3 = activeTheme.subText
+		hitboxLabel.Font = Enum.Font.GothamMedium
+		hitboxLabel.TextSize = 10
+		hitboxLabel.TextXAlignment = Enum.TextXAlignment.Left
+		hitboxLabel.Parent = card
+
+		local hitboxBox = Instance.new("TextBox")
+		hitboxBox.Size = UDim2.new(0.5, -6, 0, 22)
+		hitboxBox.Position = UDim2.new(0.5, 1, 0, 86)
+		hitboxBox.BackgroundColor3 = activeTheme.mainBg
+		hitboxBox.Text = tostring(point.hitbox or DEFAULT_ACTIVATION_RADIUS)
+		hitboxBox.TextColor3 = activeTheme.accent
+		hitboxBox.Font = Enum.Font.GothamBold
+		hitboxBox.TextSize = 10
+		hitboxBox.Parent = card
+
+		local hbCorner = Instance.new("UICorner")
+		hbCorner.CornerRadius = UDim.new(0, 4)
+		hbCorner.Parent = hitboxBox
+
+		hitboxBox.FocusLost:Connect(function()
+			local num = tonumber(hitboxBox.Text)
+			if num and num > 0 then
+				point.hitbox = num
+				saveToFile()
+			else
+				hitboxBox.Text = tostring(point.hitbox or DEFAULT_ACTIVATION_RADIUS)
+			end
+		end)
 	end
 end
-
---------------------------------------------------------------------------------
--- ВКЛАДКА "CONFIG"
---------------------------------------------------------------------------------
-
-local saveKeyLabel = Instance.new("TextLabel")
-saveKeyLabel.Size = UDim2.new(1, 0, 0, 20)
-saveKeyLabel.Position = UDim2.new(0, 0, 0, 5)
-saveKeyLabel.BackgroundTransparency = 1
-saveKeyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-saveKeyLabel.Text = "Клавиша записи точки:"
-saveKeyLabel.Font = Enum.Font.SourceSansBold
-saveKeyLabel.TextSize = 14
-saveKeyLabel.Parent = configPage
-
-local saveKeyBtn = Instance.new("TextButton")
-saveKeyBtn.Size = UDim2.new(1, -10, 0, 28)
-saveKeyBtn.Position = UDim2.new(0, 0, 0, 28)
-saveKeyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-saveKeyBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
-saveKeyBtn.Text = "[" .. saveKey.Name .. "]"
-saveKeyBtn.Font = Enum.Font.SourceSansBold
-saveKeyBtn.TextSize = 15
-saveKeyBtn.Parent = configPage
-
-saveKeyBtn.MouseButton1Click:Connect(function()
-	waitingForKeyType = "save"
-	saveKeyBtn.Text = "Нажмите клавишу..."
-end)
-
-local toggleKeyLabel = Instance.new("TextLabel")
-toggleKeyLabel.Size = UDim2.new(1, 0, 0, 20)
-toggleKeyLabel.Position = UDim2.new(0, 0, 0, 65)
-toggleKeyLabel.BackgroundTransparency = 1
-toggleKeyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleKeyLabel.Text = "Клавиша скрыть/показать UI:"
-toggleKeyLabel.Font = Enum.Font.SourceSansBold
-toggleKeyLabel.TextSize = 14
-toggleKeyLabel.Parent = configPage
-
-local toggleKeyBtn = Instance.new("TextButton")
-toggleKeyBtn.Size = UDim2.new(1, -10, 0, 28)
-toggleKeyBtn.Position = UDim2.new(0, 0, 0, 88)
-toggleKeyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-toggleKeyBtn.TextColor3 = Color3.fromRGB(255, 215, 0)
-toggleKeyBtn.Text = "[" .. toggleUIKey.Name .. "]"
-toggleKeyBtn.Font = Enum.Font.SourceSansBold
-toggleKeyBtn.TextSize = 15
-toggleKeyBtn.Parent = configPage
-
-toggleKeyBtn.MouseButton1Click:Connect(function()
-	waitingForKeyType = "toggle"
-	toggleKeyBtn.Text = "Нажмите клавишу..."
-end)
-
-local hideUiBtn = Instance.new("TextButton")
-hideUiBtn.Size = UDim2.new(1, -10, 0, 30)
-hideUiBtn.Position = UDim2.new(0, 0, 0, 130)
-hideUiBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
-hideUiBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-hideUiBtn.Text = "Скрыть меню (Hide UI)"
-hideUiBtn.Font = Enum.Font.SourceSansBold
-hideUiBtn.TextSize = 14
-hideUiBtn.Parent = configPage
-
-hideUiBtn.MouseButton1Click:Connect(function()
-	mainFrame.Visible = not mainFrame.Visible
-end)
-
-local clearAllBtn = Instance.new("TextButton")
-clearAllBtn.Size = UDim2.new(1, -10, 0, 30)
-clearAllBtn.Position = UDim2.new(0, 0, 0, 170)
-clearAllBtn.BackgroundColor3 = Color3.fromRGB(180, 80, 30)
-clearAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-clearAllBtn.Text = "Удалить все точки"
-clearAllBtn.Font = Enum.Font.SourceSansBold
-clearAllBtn.TextSize = 14
-clearAllBtn.Parent = configPage
-
-clearAllBtn.MouseButton1Click:Connect(function()
-	savedPoints = {}
-	saveToFile()
-	updateVisuals()
-	refreshUI()
-end)
-
-local unloadBtn = Instance.new("TextButton")
-unloadBtn.Size = UDim2.new(1, -10, 0, 32)
-unloadBtn.Position = UDim2.new(0, 0, 0, 210)
-unloadBtn.BackgroundColor3 = Color3.fromRGB(190, 40, 40)
-unloadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-unloadBtn.Text = "Выключить скрипт полностью"
-unloadBtn.Font = Enum.Font.SourceSansBold
-unloadBtn.TextSize = 14
-unloadBtn.Parent = configPage
-
-local ghLabel = Instance.new("TextLabel")
-ghLabel.Size = UDim2.new(1, 0, 0, 20)
-ghLabel.Position = UDim2.new(0, 0, 0, 255)
-ghLabel.BackgroundTransparency = 1
-ghLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-ghLabel.Text = "GitHub (клик для копирования):"
-ghLabel.Font = Enum.Font.SourceSansBold
-ghLabel.TextSize = 13
-ghLabel.Parent = configPage
-
-local ghBox = Instance.new("TextBox")
-ghBox.Size = UDim2.new(1, -10, 0, 28)
-ghBox.Position = UDim2.new(0, 0, 0, 278)
-ghBox.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-ghBox.TextColor3 = Color3.fromRGB(100, 180, 255)
-ghBox.Text = GITHUB_LINK
-ghBox.Font = Enum.Font.SourceSans
-ghBox.TextSize = 12
-ghBox.ClearTextOnFocus = false
-ghBox.Parent = configPage
-
-ghBox.Focused:Connect(function()
-	if setclipboard then
-		setclipboard(GITHUB_LINK)
-		ghBox.Text = "Ссылка скопирована!"
-		task.wait(1.5)
-		ghBox.Text = GITHUB_LINK
-	end
-end)
-
-local creditsLabel = Instance.new("TextLabel")
-creditsLabel.Size = UDim2.new(1, 0, 0, 25)
-creditsLabel.Position = UDim2.new(0, 0, 0, 315)
-creditsLabel.BackgroundTransparency = 1
-creditsLabel.TextColor3 = Color3.fromRGB(150, 150, 160)
-creditsLabel.Text = "made by amsobruv"
-creditsLabel.Font = Enum.Font.SourceSansItalic
-creditsLabel.TextSize = 15
-creditsLabel.Parent = configPage
-
---------------------------------------------------------------------------------
--- ЛОГИКА СОХРАНЕНИЯ, ВЫКЛЮЧЕНИЯ И ВВОДА
---------------------------------------------------------------------------------
 
 local function unloadScript()
 	if renderConnection then renderConnection:Disconnect() end
 	if inputConnection then inputConnection:Disconnect() end
 	clearVisuals()
 	if screenGui then screenGui:Destroy() end
-	print("[AutoLook] Скрипт полностью выключен!")
 end
 
 unloadBtn.MouseButton1Click:Connect(unloadScript)
@@ -555,12 +952,15 @@ local function saveCurrentLocation()
 
 	pointCounter = pointCounter + 1
 	local pointData = {
-		name = "Точка " .. pointCounter,
+		name = (currentLang == "EN" and "Point " or "Точка ") .. pointCounter,
 		position = character.HumanoidRootPart.Position,
 		cameraCFrame = camera.CFrame,
 		color = Color3.fromRGB(255, 200, 0),
 		showESP = true,
-		showHighlight = true
+		showHighlight = true,
+		shape = "Square",
+		imageId = "",
+		hitbox = DEFAULT_ACTIVATION_RADIUS
 	}
 
 	table.insert(savedPoints, pointData)
@@ -573,7 +973,6 @@ loadFromFile()
 updateVisuals()
 refreshUI()
 
--- Проверка расстояния
 renderConnection = RunService.RenderStepped:Connect(function()
 	local character = localPlayer.Character
 	if not character or not character:FindFirstChild("HumanoidRootPart") then return end
@@ -582,15 +981,15 @@ renderConnection = RunService.RenderStepped:Connect(function()
 
 	for _, point in ipairs(savedPoints) do
 		local distance = (currentPos - point.position).Magnitude
+		local radius = point.hitbox or DEFAULT_ACTIVATION_RADIUS
 
-		if distance <= ACTIVATION_RADIUS then
+		if distance <= radius then
 			local targetRotation = CFrame.new(camera.CFrame.Position) * point.cameraCFrame.Rotation
 			camera.CFrame = camera.CFrame:Lerp(targetRotation, TURN_SPEED)
 		end
 	end
 end)
 
--- Ввод с клавиатуры
 inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 
@@ -613,3 +1012,5 @@ inputConnection = UserInputService.InputBegan:Connect(function(input, gameProces
 		mainFrame.Visible = not mainFrame.Visible
 	end
 end)
+
+```
