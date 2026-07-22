@@ -15,6 +15,9 @@ local GITHUB_LINK = "https://github.com/kikgolib/AzureLatchLineUPPPPSSSS"
 
 local currentLang = "EN"
 local currentTheme = "Obsidian"
+local uiScaleValue = 1.0
+local customTextSize = 11
+
 local savedPoints = {}
 local pointCounter = 0
 local visualObjects = {}
@@ -79,6 +82,8 @@ local translations = {
 		toggleKeyLbl = "Menu Key",
 		langLbl = "Language",
 		themeLbl = "UI Theme",
+		uiScaleLbl = "UI Scale",
+		textSizeLbl = "Text Size",
 		hideUi = "Minimize UI",
 		clearAll = "Clear All Points",
 		unload = "Unload",
@@ -101,6 +106,8 @@ local translations = {
 		toggleKeyLbl = "Бинд меню",
 		langLbl = "Язык",
 		themeLbl = "Тема UI",
+		uiScaleLbl = "Размер UI",
+		textSizeLbl = "Размер текста",
 		hideUi = "Скрыть UI",
 		clearAll = "Очистить точки",
 		unload = "Выгрузить",
@@ -128,6 +135,8 @@ local function saveToFile()
 		toggleUIKey = toggleUIKey.Name,
 		language = currentLang,
 		theme = currentTheme,
+		uiScale = uiScaleValue,
+		textSize = customTextSize,
 		points = {}
 	}
 
@@ -176,6 +185,12 @@ local function loadFromFile()
 		if result.toggleUIKey and Enum.KeyCode[result.toggleUIKey] then
 			toggleUIKey = Enum.KeyCode[result.toggleUIKey]
 		end
+		if result.uiScale then
+			uiScaleValue = tonumber(result.uiScale) or 1.0
+		end
+		if result.textSize then
+			customTextSize = tonumber(result.textSize) or 11
+		end
 
 		if result.points then
 			savedPoints = {}
@@ -184,7 +199,7 @@ local function loadFromFile()
 				table.insert(savedPoints, {
 					name = item.name,
 					position = Vector3.new(item.position[1], item.position[2], item.position[3]),
-					cameraCFrame = CFrame.new(unpack(item.cameraCFrame)),
+					cameraCFrame = CFrame.new(table.unpack(item.cameraCFrame)),
 					color = Color3.new(col[1], col[2], col[3]),
 					showESP = item.showESP ~= false,
 					showHighlight = item.showHighlight ~= false,
@@ -217,21 +232,23 @@ local function updateVisuals()
 
 	for index, point in ipairs(savedPoints) do
 		local shapeType = point.shape or "Square"
+		local hitboxRadius = point.hitbox or DEFAULT_ACTIVATION_RADIUS
+		local diameter = hitboxRadius * 2
 		local part
 
 		if shapeType == "Circle" then
 			part = Instance.new("Part")
 			part.Shape = Enum.PartType.Cylinder
-			part.Size = Vector3.new(0.2, 3, 3)
+			part.Size = Vector3.new(0.2, diameter, diameter)
 			part.CFrame = CFrame.new(point.position - Vector3.new(0, 1.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
 		elseif shapeType == "Triangle" then
 			part = Instance.new("WedgePart")
-			part.Size = Vector3.new(1.8, 1.8, 1.8)
+			part.Size = Vector3.new(diameter, diameter, diameter)
 			part.Position = point.position
 		else
 			part = Instance.new("Part")
 			part.Shape = Enum.PartType.Block
-			part.Size = Vector3.new(1.5, 1.5, 1.5)
+			part.Size = Vector3.new(diameter, diameter, diameter)
 			part.Position = point.position
 		end
 
@@ -271,7 +288,7 @@ local function updateVisuals()
 			local billboard = Instance.new("BillboardGui")
 			billboard.Adornee = part
 			billboard.Size = UDim2.new(0, 140, 0, 40)
-			billboard.StudsOffset = Vector3.new(0, 2.2, 0)
+			billboard.StudsOffset = Vector3.new(0, hitboxRadius + 1, 0)
 			billboard.AlwaysOnTop = true
 			billboard.Parent = part
 
@@ -282,7 +299,7 @@ local function updateVisuals()
 			label.TextStrokeTransparency = 0
 			label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 			label.Font = Enum.Font.GothamBold
-			label.TextSize = 13
+			label.TextSize = math.clamp(customTextSize + 2, 8, 24)
 			label.Text = point.name
 			label.Parent = billboard
 
@@ -329,13 +346,17 @@ toggleStroke.Thickness = 1
 toggleStroke.Parent = toggleBtn
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 360, 0, 430)
-mainFrame.Position = UDim2.new(0, 20, 0.5, -215)
+mainFrame.Size = UDim2.new(0, 360, 0, 480)
+mainFrame.Position = UDim2.new(0, 20, 0.5, -240)
 mainFrame.BackgroundColor3 = themes[currentTheme].mainBg
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
+
+local uiScaleObj = Instance.new("UIScale")
+uiScaleObj.Scale = uiScaleValue
+uiScaleObj.Parent = mainFrame
 
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 10)
@@ -374,7 +395,7 @@ titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "AUTOLOOK"
 titleLabel.TextColor3 = themes[currentTheme].text
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 13
+titleLabel.TextSize = customTextSize + 2
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = headerFrame
 
@@ -405,7 +426,7 @@ pointsTabBtn.Position = UDim2.new(0, 6, 0, 10)
 pointsTabBtn.BackgroundColor3 = themes[currentTheme].cardBg
 pointsTabBtn.TextColor3 = themes[currentTheme].text
 pointsTabBtn.Font = Enum.Font.GothamBold
-pointsTabBtn.TextSize = 11
+pointsTabBtn.TextSize = customTextSize
 pointsTabBtn.Parent = navFrame
 
 local ptCorner = Instance.new("UICorner")
@@ -419,7 +440,7 @@ configTabBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 configTabBtn.BackgroundTransparency = 1
 configTabBtn.TextColor3 = themes[currentTheme].subText
 configTabBtn.Font = Enum.Font.GothamMedium
-configTabBtn.TextSize = 11
+configTabBtn.TextSize = customTextSize
 configTabBtn.Parent = navFrame
 
 local cfgCorner = Instance.new("UICorner")
@@ -440,7 +461,7 @@ pointsPage.Parent = contentArea
 local configPage = Instance.new("ScrollingFrame")
 configPage.Size = UDim2.new(1, 0, 1, 0)
 configPage.BackgroundTransparency = 1
-configPage.CanvasSize = UDim2.new(0, 0, 0, 420)
+configPage.CanvasSize = UDim2.new(0, 0, 0, 520)
 configPage.ScrollBarThickness = 2
 configPage.ScrollBarImageColor3 = themes[currentTheme].accent
 configPage.Visible = false
@@ -508,7 +529,7 @@ local function createRowLabel(text, posY)
 	label.TextColor3 = themes[currentTheme].subText
 	label.Text = text
 	label.Font = Enum.Font.GothamBold
-	label.TextSize = 10
+	label.TextSize = math.clamp(customTextSize - 1, 8, 20)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = configPage
 	return label
@@ -521,7 +542,7 @@ saveKeyBtn.Position = UDim2.new(0, 0, 0, 22)
 saveKeyBtn.BackgroundColor3 = themes[currentTheme].cardBg
 saveKeyBtn.TextColor3 = themes[currentTheme].accent
 saveKeyBtn.Font = Enum.Font.GothamBold
-saveKeyBtn.TextSize = 11
+saveKeyBtn.TextSize = customTextSize
 saveKeyBtn.Parent = configPage
 
 local skCorner = Instance.new("UICorner")
@@ -540,7 +561,7 @@ toggleKeyBtn.Position = UDim2.new(0, 0, 0, 72)
 toggleKeyBtn.BackgroundColor3 = themes[currentTheme].cardBg
 toggleKeyBtn.TextColor3 = themes[currentTheme].accent
 toggleKeyBtn.Font = Enum.Font.GothamBold
-toggleKeyBtn.TextSize = 11
+toggleKeyBtn.TextSize = customTextSize
 toggleKeyBtn.Parent = configPage
 
 local tkCorner = Instance.new("UICorner")
@@ -559,7 +580,7 @@ langBtn.Position = UDim2.new(0, 0, 0, 122)
 langBtn.BackgroundColor3 = themes[currentTheme].cardBg
 langBtn.TextColor3 = themes[currentTheme].text
 langBtn.Font = Enum.Font.GothamMedium
-langBtn.TextSize = 11
+langBtn.TextSize = customTextSize
 langBtn.Parent = configPage
 
 local lgCorner = Instance.new("UICorner")
@@ -579,7 +600,7 @@ themeBtn.Position = UDim2.new(0, 0, 0, 172)
 themeBtn.BackgroundColor3 = themes[currentTheme].cardBg
 themeBtn.TextColor3 = themes[currentTheme].text
 themeBtn.Font = Enum.Font.GothamMedium
-themeBtn.TextSize = 11
+themeBtn.TextSize = customTextSize
 themeBtn.Parent = configPage
 
 local tmCorner = Instance.new("UICorner")
@@ -600,13 +621,71 @@ themeBtn.MouseButton1Click:Connect(function()
 	refreshUI()
 end)
 
+local uiScaleLbl = createRowLabel("", 204)
+local uiScaleBtn = Instance.new("TextButton")
+uiScaleBtn.Size = UDim2.new(1, -12, 0, 26)
+uiScaleBtn.Position = UDim2.new(0, 0, 0, 222)
+uiScaleBtn.BackgroundColor3 = themes[currentTheme].cardBg
+uiScaleBtn.TextColor3 = themes[currentTheme].accent
+uiScaleBtn.Font = Enum.Font.GothamBold
+uiScaleBtn.TextSize = customTextSize
+uiScaleBtn.Parent = configPage
+
+local scaleCorner = Instance.new("UICorner")
+scaleCorner.CornerRadius = UDim.new(0, 5)
+scaleCorner.Parent = uiScaleBtn
+
+local scalesList = {0.8, 0.9, 1.0, 1.1, 1.2, 1.3}
+uiScaleBtn.MouseButton1Click:Connect(function()
+	local idx = 1
+	for i, val in ipairs(scalesList) do
+		if math.abs(val - uiScaleValue) < 0.05 then
+			idx = (i % #scalesList) + 1
+			break
+		end
+	end
+	uiScaleValue = scalesList[idx]
+	uiScaleObj.Scale = uiScaleValue
+	saveToFile()
+	refreshUI()
+end)
+
+local textSizeLbl = createRowLabel("", 254)
+local textSizeBtn = Instance.new("TextButton")
+textSizeBtn.Size = UDim2.new(1, -12, 0, 26)
+textSizeBtn.Position = UDim2.new(0, 0, 0, 272)
+textSizeBtn.BackgroundColor3 = themes[currentTheme].cardBg
+textSizeBtn.TextColor3 = themes[currentTheme].accent
+textSizeBtn.Font = Enum.Font.GothamBold
+textSizeBtn.TextSize = customTextSize
+textSizeBtn.Parent = configPage
+
+local tsCorner = Instance.new("UICorner")
+tsCorner.CornerRadius = UDim.new(0, 5)
+tsCorner.Parent = textSizeBtn
+
+local fontSizesList = {9, 10, 11, 12, 13, 14}
+textSizeBtn.MouseButton1Click:Connect(function()
+	local idx = 1
+	for i, val in ipairs(fontSizesList) do
+		if val == customTextSize then
+			idx = (i % #fontSizesList) + 1
+			break
+		end
+	end
+	customTextSize = fontSizesList[idx]
+	saveToFile()
+	updateVisuals()
+	refreshUI()
+end)
+
 local hideUiBtn = Instance.new("TextButton")
 hideUiBtn.Size = UDim2.new(1, -12, 0, 26)
-hideUiBtn.Position = UDim2.new(0, 0, 0, 208)
+hideUiBtn.Position = UDim2.new(0, 0, 0, 308)
 hideUiBtn.BackgroundColor3 = themes[currentTheme].cardBg
 hideUiBtn.TextColor3 = themes[currentTheme].text
 hideUiBtn.Font = Enum.Font.GothamMedium
-hideUiBtn.TextSize = 11
+hideUiBtn.TextSize = customTextSize
 hideUiBtn.Parent = configPage
 
 local huCorner = Instance.new("UICorner")
@@ -619,11 +698,11 @@ end)
 
 local clearAllBtn = Instance.new("TextButton")
 clearAllBtn.Size = UDim2.new(1, -12, 0, 26)
-clearAllBtn.Position = UDim2.new(0, 0, 0, 240)
+clearAllBtn.Position = UDim2.new(0, 0, 0, 340)
 clearAllBtn.BackgroundColor3 = Color3.fromRGB(170, 60, 60)
 clearAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 clearAllBtn.Font = Enum.Font.GothamBold
-clearAllBtn.TextSize = 11
+clearAllBtn.TextSize = customTextSize
 clearAllBtn.Parent = configPage
 
 local caCorner = Instance.new("UICorner")
@@ -639,26 +718,26 @@ end)
 
 local unloadBtn = Instance.new("TextButton")
 unloadBtn.Size = UDim2.new(1, -12, 0, 26)
-unloadBtn.Position = UDim2.new(0, 0, 0, 272)
+unloadBtn.Position = UDim2.new(0, 0, 0, 372)
 unloadBtn.BackgroundColor3 = Color3.fromRGB(130, 35, 35)
 unloadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 unloadBtn.Font = Enum.Font.GothamBold
-unloadBtn.TextSize = 11
+unloadBtn.TextSize = customTextSize
 unloadBtn.Parent = configPage
 
 local unCorner = Instance.new("UICorner")
 unCorner.CornerRadius = UDim.new(0, 5)
 unCorner.Parent = unloadBtn
 
-createRowLabel("GitHub", 308)
+createRowLabel("GitHub", 408)
 local ghBox = Instance.new("TextBox")
 ghBox.Size = UDim2.new(1, -12, 0, 24)
-ghBox.Position = UDim2.new(0, 0, 0, 326)
+ghBox.Position = UDim2.new(0, 0, 0, 426)
 ghBox.BackgroundColor3 = themes[currentTheme].cardBg
 ghBox.TextColor3 = themes[currentTheme].accent
 ghBox.Text = GITHUB_LINK
 ghBox.Font = Enum.Font.Gotham
-ghBox.TextSize = 10
+ghBox.TextSize = math.clamp(customTextSize - 1, 8, 18)
 ghBox.ClearTextOnFocus = false
 ghBox.Parent = configPage
 
@@ -677,18 +756,20 @@ end)
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, -12, 0, 18)
-creditsLabel.Position = UDim2.new(0, 0, 0, 362)
+creditsLabel.Position = UDim2.new(0, 0, 0, 462)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "made by KIKGOLIB"
 creditsLabel.TextColor3 = themes[currentTheme].subText
 creditsLabel.Font = Enum.Font.GothamMedium
-creditsLabel.TextSize = 9
+creditsLabel.TextSize = math.clamp(customTextSize - 2, 8, 16)
 creditsLabel.TextTransparency = 0.4
 creditsLabel.TextXAlignment = Enum.TextXAlignment.Center
 creditsLabel.Parent = configPage
 
 refreshUI = function()
 	local activeTheme = themes[currentTheme]
+
+	uiScaleObj.Scale = uiScaleValue
 
 	mainFrame.BackgroundColor3 = activeTheme.mainBg
 	mainStroke.Color = activeTheme.border
@@ -700,6 +781,7 @@ refreshUI = function()
 	headerFrame.BackgroundColor3 = activeTheme.topBg
 	headerFix.BackgroundColor3 = activeTheme.topBg
 	titleLabel.TextColor3 = activeTheme.text
+	titleLabel.TextSize = customTextSize + 2
 	accentLine.BackgroundColor3 = activeTheme.accent
 
 	navFrame.BackgroundColor3 = activeTheme.topBg
@@ -716,38 +798,63 @@ refreshUI = function()
 	end
 
 	pointsTabBtn.Text = t("pointsTab")
+	pointsTabBtn.TextSize = customTextSize
+
 	configTabBtn.Text = t("configTab")
+	configTabBtn.TextSize = customTextSize
 
 	saveKeyLbl.Text = t("saveKeyLbl")
 	saveKeyLbl.TextColor3 = activeTheme.subText
 	saveKeyBtn.Text = "[" .. saveKey.Name .. "]"
 	saveKeyBtn.BackgroundColor3 = activeTheme.cardBg
 	saveKeyBtn.TextColor3 = activeTheme.accent
+	saveKeyBtn.TextSize = customTextSize
 
 	toggleKeyLbl.Text = t("toggleKeyLbl")
 	toggleKeyLbl.TextColor3 = activeTheme.subText
 	toggleKeyBtn.Text = "[" .. toggleUIKey.Name .. "]"
 	toggleKeyBtn.BackgroundColor3 = activeTheme.cardBg
 	toggleKeyBtn.TextColor3 = activeTheme.accent
+	toggleKeyBtn.TextSize = customTextSize
 
 	langLbl.Text = t("langLbl")
 	langLbl.TextColor3 = activeTheme.subText
 	langBtn.Text = (currentLang == "EN") and "English" or "Русский"
 	langBtn.BackgroundColor3 = activeTheme.cardBg
 	langBtn.TextColor3 = activeTheme.text
+	langBtn.TextSize = customTextSize
 
 	themeLbl.Text = t("themeLbl")
 	themeLbl.TextColor3 = activeTheme.subText
 	themeBtn.Text = currentTheme
 	themeBtn.BackgroundColor3 = activeTheme.cardBg
 	themeBtn.TextColor3 = activeTheme.text
+	themeBtn.TextSize = customTextSize
+
+	uiScaleLbl.Text = t("uiScaleLbl")
+	uiScaleLbl.TextColor3 = activeTheme.subText
+	uiScaleBtn.Text = string.format("%.1fx", uiScaleValue)
+	uiScaleBtn.BackgroundColor3 = activeTheme.cardBg
+	uiScaleBtn.TextColor3 = activeTheme.accent
+	uiScaleBtn.TextSize = customTextSize
+
+	textSizeLbl.Text = t("textSizeLbl")
+	textSizeLbl.TextColor3 = activeTheme.subText
+	textSizeBtn.Text = tostring(customTextSize) .. "px"
+	textSizeBtn.BackgroundColor3 = activeTheme.cardBg
+	textSizeBtn.TextColor3 = activeTheme.accent
+	textSizeBtn.TextSize = customTextSize
 
 	hideUiBtn.Text = t("hideUi")
 	hideUiBtn.BackgroundColor3 = activeTheme.cardBg
 	hideUiBtn.TextColor3 = activeTheme.text
+	hideUiBtn.TextSize = customTextSize
 
 	clearAllBtn.Text = t("clearAll")
+	clearAllBtn.TextSize = customTextSize
+
 	unloadBtn.Text = t("unload")
+	unloadBtn.TextSize = customTextSize
 
 	ghBox.BackgroundColor3 = activeTheme.cardBg
 	ghBox.TextColor3 = activeTheme.accent
@@ -778,7 +885,7 @@ refreshUI = function()
 		nameBox.Text = point.name
 		nameBox.TextColor3 = activeTheme.text
 		nameBox.Font = Enum.Font.GothamMedium
-		nameBox.TextSize = 11
+		nameBox.TextSize = customTextSize
 		nameBox.Parent = card
 
 		local nameCorner = Instance.new("UICorner")
@@ -802,7 +909,7 @@ refreshUI = function()
 		delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 		delBtn.Text = t("delete")
 		delBtn.Font = Enum.Font.GothamBold
-		delBtn.TextSize = 10
+		delBtn.TextSize = customTextSize
 		delBtn.Parent = card
 
 		local delCorner = Instance.new("UICorner")
@@ -823,7 +930,7 @@ refreshUI = function()
 		shapeBtn.TextColor3 = activeTheme.subText
 		shapeBtn.Text = getShapeName(point.shape or "Square")
 		shapeBtn.Font = Enum.Font.Gotham
-		shapeBtn.TextSize = 10
+		shapeBtn.TextSize = customTextSize
 		shapeBtn.Parent = card
 
 		local shapeCorner = Instance.new("UICorner")
@@ -852,7 +959,7 @@ refreshUI = function()
 		colorBtn.Text = t("color")
 		colorBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
 		colorBtn.Font = Enum.Font.GothamBold
-		colorBtn.TextSize = 10
+		colorBtn.TextSize = customTextSize
 		colorBtn.Parent = card
 
 		local colorCorner = Instance.new("UICorner")
@@ -881,7 +988,7 @@ refreshUI = function()
 		imgBox.Text = (point.imageId and point.imageId ~= "") and point.imageId or t("imgPlaceholder")
 		imgBox.TextColor3 = (point.imageId and point.imageId ~= "") and activeTheme.accent or activeTheme.subText
 		imgBox.Font = Enum.Font.Gotham
-		imgBox.TextSize = 10
+		imgBox.TextSize = customTextSize
 		imgBox.ClearTextOnFocus = false
 		imgBox.Parent = card
 
@@ -902,7 +1009,7 @@ refreshUI = function()
 		hitboxLabel.Text = t("hitboxLbl")
 		hitboxLabel.TextColor3 = activeTheme.subText
 		hitboxLabel.Font = Enum.Font.GothamMedium
-		hitboxLabel.TextSize = 10
+		hitboxLabel.TextSize = customTextSize
 		hitboxLabel.TextXAlignment = Enum.TextXAlignment.Left
 		hitboxLabel.Parent = card
 
@@ -913,7 +1020,7 @@ refreshUI = function()
 		hitboxBox.Text = tostring(point.hitbox or DEFAULT_ACTIVATION_RADIUS)
 		hitboxBox.TextColor3 = activeTheme.accent
 		hitboxBox.Font = Enum.Font.GothamBold
-		hitboxBox.TextSize = 10
+		hitboxBox.TextSize = customTextSize
 		hitboxBox.Parent = card
 
 		local hbCorner = Instance.new("UICorner")
@@ -925,6 +1032,7 @@ refreshUI = function()
 			if num and num > 0 then
 				point.hitbox = num
 				saveToFile()
+				updateVisuals()
 			else
 				hitboxBox.Text = tostring(point.hitbox or DEFAULT_ACTIVATION_RADIUS)
 			end
