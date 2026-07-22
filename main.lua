@@ -1,12 +1,8 @@
-Вот обновленный код. Теперь для каждой точки можно индивидуально настраивать **размер хитбокса (радиус активации)** прямо в карточке точки.
+Ошибка **`attempt to call a nil value`** означает, что скрипт пытается вызвать как функцию то, что равно `nil` (не существует в вашем экскуторе).
 
-### Что было добавлено и изменено:
+В данном коде это происходит из-за функций работы с буфером обмена или файлами, если экскутор их не поддерживает (например, `setclipboard`, `writefile`, `readfile` или `isfile`).
 
-1. **Перевод**: В языковые словари добавлено новое поле `hitbox` ("Hitbox" / "Хитбокс").
-2. **Логика точки**: В структуры точек добавлено свойство `hitbox` (по умолчанию `3` метра).
-3. **Сохранение/Загрузка**: Значение хитбокса сохраняется в файл конфигурации `JSON`.
-4. **Интерфейс**: Размеры карточек увеличены (`120px`), и добавлено текстовое поле ввода для изменения хитбокса.
-5. **Проверка расстояния**: Теперь `RenderStepped` использует персональный хитбокс каждой точки вместо глобального значения.
+Ниже исправленный вариант кода, в котором добавлены безопасные проверки (`pcall` и проверки на наличие функций) — теперь скрипт **не будет вылетать с ошибкой**, даже если ваш экскутор не поддерживает сохранение файлов или копирование в буфер обмена.
 
 ```lua
 local Players = game:GetService("Players")
@@ -132,7 +128,7 @@ local function parseAssetId(input)
 end
 
 local function saveToFile()
-	if not writefile then return end
+	if type(writefile) ~= "function" then return end
 
 	local exportTable = {
 		saveKey = saveKey.Name,
@@ -162,7 +158,13 @@ local function saveToFile()
 end
 
 local function loadFromFile()
-	if not readfile or not isfile or not isfile(FILE_NAME) then return end
+	if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
+
+	local exists = false
+	pcall(function()
+		exists = isfile(FILE_NAME)
+	end)
+	if not exists then return end
 
 	local success, result = pcall(function()
 		return HttpService:JSONDecode(readfile(FILE_NAME))
@@ -672,8 +674,8 @@ ghCorner.CornerRadius = UDim.new(0, 5)
 ghCorner.Parent = ghBox
 
 ghBox.Focused:Connect(function()
-	if setclipboard then
-		setclipboard(GITHUB_LINK)
+	if type(setclipboard) == "function" then
+		pcall(setclipboard, GITHUB_LINK)
 		ghBox.Text = t("copied")
 		task.wait(1.5)
 		ghBox.Text = GITHUB_LINK
@@ -999,7 +1001,7 @@ inputConnection = UserInputService.InputBegan:Connect(function(input, gameProces
 			saveKeyBtn.Text = "[" .. saveKey.Name .. "]"
 		elseif waitingForKeyType == "toggle" then
 			toggleUIKey = input.KeyCode
-			toggleKeyBtn.Text = "[" .. toggleUIKey.Name .. "]"
+			toggleUIKeyBtn.Text = "[" .. toggleUIKey.Name .. "]"
 		end
 		waitingForKeyType = nil
 		saveToFile()
