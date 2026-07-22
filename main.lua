@@ -1,10 +1,3 @@
-Ошибка **`attempt to call a nil value`** означает, что скрипт пытается вызвать как функцию то, что равно `nil` (не существует в вашем экскуторе).
-
-В данном коде это происходит из-за функций работы с буфером обмена или файлами, если экскутор их не поддерживает (например, `setclipboard`, `writefile`, `readfile` или `isfile`).
-
-Ниже исправленный вариант кода, в котором добавлены безопасные проверки (`pcall` и проверки на наличие функций) — теперь скрипт **не будет вылетать с ошибкой**, даже если ваш экскутор не поддерживает сохранение файлов или копирование в буфер обмена.
-
-```lua
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -1014,5 +1007,3 @@ inputConnection = UserInputService.InputBegan:Connect(function(input, gameProces
 		mainFrame.Visible = not mainFrame.Visible
 	end
 end)
-
-```
