@@ -1,0 +1,591 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- Данные
+local trackedPlayers = {} -- [Player] = { color = Color3, mode = "Highlight", connections = {} }
+local visualObjects = {} -- [Player] = { objects }
+local globalConnections = {}
+
+-- Интерфейс
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+if playerGui:FindFirstChild("TargetESP_Gui") then
+	playerGui.TargetESP_Gui:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TargetESP_Gui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+-- Переключатель UI (кнопка ⚡)
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0, 42, 0, 42)
+toggleBtn.Position = UDim2.new(0, 20, 0.3, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+toggleBtn.TextColor3 = Color3.fromRGB(88, 101, 242)
+toggleBtn.Text = "⚡"
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 18
+toggleBtn.Active = true
+toggleBtn.Draggable = true
+toggleBtn.Parent = screenGui
+
+local tCorner = Instance.new("UICorner", toggleBtn)
+tCorner.CornerRadius = UDim.new(0, 10)
+local tStroke = Instance.new("UIStroke", toggleBtn)
+tStroke.Color = Color3.fromRGB(35, 38, 50)
+
+-- Главное окно
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 420, 0, 380)
+mainFrame.Position = UDim2.new(0.5, -210, 0.5, -190)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 16, 20)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local mCorner = Instance.new("UICorner", mainFrame)
+mCorner.CornerRadius = UDim.new(0, 10)
+local mStroke = Instance.new("UIStroke", mainFrame)
+mStroke.Color = Color3.fromRGB(35, 38, 50)
+
+local function toggleMenu()
+	mainFrame.Visible = not mainFrame.Visible
+end
+
+toggleBtn.MouseButton1Click:Connect(toggleMenu)
+
+-- Бинд на клавишу Insert
+local inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not gameProcessed and input.KeyCode == Enum.KeyCode.Insert then
+		toggleMenu()
+	end
+end)
+table.insert(globalConnections, inputConn)
+
+-- Шапка
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+header.Parent = mainFrame
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 10)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -20, 1, 0)
+title.Position = UDim2.new(0, 14, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "TARGET ESP CONTROLLER [Insert]"
+title.TextColor3 = Color3.fromRGB(240, 240, 245)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+-- Вкладки
+local navFrame = Instance.new("Frame")
+navFrame.Size = UDim2.new(0, 110, 1, -40)
+navFrame.Position = UDim2.new(0, 0, 0, 40)
+navFrame.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+navFrame.Parent = mainFrame
+
+local addTabBtn = Instance.new("TextButton")
+addTabBtn.Size = UDim2.new(1, -12, 0, 32)
+addTabBtn.Position = UDim2.new(0, 6, 0, 10)
+addTabBtn.BackgroundColor3 = Color3.fromRGB(26, 28, 36)
+addTabBtn.TextColor3 = Color3.fromRGB(240, 240, 245)
+addTabBtn.Text = "Поиск"
+addTabBtn.Font = Enum.Font.GothamBold
+addTabBtn.TextSize = 11
+addTabBtn.Parent = navFrame
+Instance.new("UICorner", addTabBtn).CornerRadius = UDim.new(0, 6)
+
+local listTabBtn = Instance.new("TextButton")
+listTabBtn.Size = UDim2.new(1, -12, 0, 32)
+listTabBtn.Position = UDim2.new(0, 6, 0, 48)
+listTabBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+listTabBtn.BackgroundTransparency = 1
+listTabBtn.TextColor3 = Color3.fromRGB(140, 145, 160)
+listTabBtn.Text = "Список"
+listTabBtn.Font = Enum.Font.GothamMedium
+listTabBtn.TextSize = 11
+listTabBtn.Parent = navFrame
+Instance.new("UICorner", listTabBtn).CornerRadius = UDim.new(0, 6)
+
+local contentArea = Instance.new("Frame")
+contentArea.Size = UDim2.new(1, -120, 1, -50)
+contentArea.Position = UDim2.new(0, 115, 0, 45)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
+
+-- Страница 1: Добавление
+local addPage = Instance.new("Frame")
+addPage.Size = UDim2.new(1, 0, 1, 0)
+addPage.BackgroundTransparency = 1
+addPage.Parent = contentArea
+
+-- Страница 2: Список людей
+local listPage = Instance.new("ScrollingFrame")
+listPage.Size = UDim2.new(1, 0, 1, 0)
+listPage.BackgroundTransparency = 1
+listPage.CanvasSize = UDim2.new(0, 0, 0, 0)
+listPage.ScrollBarThickness = 2
+listPage.ScrollBarImageColor3 = Color3.fromRGB(88, 101, 242)
+listPage.Visible = false
+listPage.Parent = contentArea
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Parent = listPage
+listLayout.Padding = UDim.new(0, 6)
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	listPage.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
+end)
+
+-- Переключение страниц
+addTabBtn.MouseButton1Click:Connect(function()
+	addPage.Visible = true
+	listPage.Visible = false
+	addTabBtn.BackgroundColor3 = Color3.fromRGB(26, 28, 36)
+	addTabBtn.BackgroundTransparency = 0
+	addTabBtn.TextColor3 = Color3.fromRGB(240, 240, 245)
+	addTabBtn.Font = Enum.Font.GothamBold
+
+	listTabBtn.BackgroundTransparency = 1
+	listTabBtn.TextColor3 = Color3.fromRGB(140, 145, 160)
+	listTabBtn.Font = Enum.Font.GothamMedium
+end)
+
+listTabBtn.MouseButton1Click:Connect(function()
+	addPage.Visible = false
+	listPage.Visible = true
+	listTabBtn.BackgroundColor3 = Color3.fromRGB(26, 28, 36)
+	listTabBtn.BackgroundTransparency = 0
+	listTabBtn.TextColor3 = Color3.fromRGB(240, 240, 245)
+	listTabBtn.Font = Enum.Font.GothamBold
+
+	addTabBtn.BackgroundTransparency = 1
+	addTabBtn.TextColor3 = Color3.fromRGB(140, 145, 160)
+	addTabBtn.Font = Enum.Font.GothamMedium
+end)
+
+-- Элементы страницы "Добавление"
+local nameLbl = Instance.new("TextLabel")
+nameLbl.Size = UDim2.new(1, 0, 0, 16)
+nameLbl.Position = UDim2.new(0, 0, 0, 5)
+nameLbl.BackgroundTransparency = 1
+nameLbl.Text = "Никнейм (или часть):"
+nameLbl.TextColor3 = Color3.fromRGB(140, 145, 160)
+nameLbl.Font = Enum.Font.GothamBold
+nameLbl.TextSize = 10
+nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+nameLbl.Parent = addPage
+
+local nameInput = Instance.new("TextBox")
+nameInput.Size = UDim2.new(1, -10, 0, 28)
+nameInput.Position = UDim2.new(0, 0, 0, 24)
+nameInput.BackgroundColor3 = Color3.fromRGB(26, 28, 36)
+nameInput.TextColor3 = Color3.fromRGB(240, 240, 245)
+nameInput.PlaceholderText = "Введите ник..."
+nameInput.Font = Enum.Font.GothamMedium
+nameInput.TextSize = 11
+nameInput.Parent = addPage
+Instance.new("UICorner", nameInput).CornerRadius = UDim.new(0, 6)
+
+local modeLbl = Instance.new("TextLabel")
+modeLbl.Size = UDim2.new(1, 0, 0, 16)
+modeLbl.Position = UDim2.new(0, 0, 0, 60)
+modeLbl.BackgroundTransparency = 1
+modeLbl.Text = "Тип подсветки:"
+modeLbl.TextColor3 = Color3.fromRGB(140, 145, 160)
+modeLbl.Font = Enum.Font.GothamBold
+modeLbl.TextSize = 10
+modeLbl.TextXAlignment = Enum.TextXAlignment.Left
+modeLbl.Parent = addPage
+
+local selectedMode = "Highlight"
+local modeOrder = {"Highlight", "Boxes", "Name ESP", "Skeleton", "Full ESP"}
+local modeBtn = Instance.new("TextButton")
+modeBtn.Size = UDim2.new(1, -10, 0, 28)
+modeBtn.Position = UDim2.new(0, 0, 0, 78)
+modeBtn.BackgroundColor3 = Color3.fromRGB(26, 28, 36)
+modeBtn.TextColor3 = Color3.fromRGB(88, 101, 242)
+modeBtn.Text = selectedMode
+modeBtn.Font = Enum.Font.GothamBold
+modeBtn.TextSize = 11
+modeBtn.Parent = addPage
+Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 6)
+
+modeBtn.MouseButton1Click:Connect(function()
+	local idx = 1
+	for i, m in ipairs(modeOrder) do
+		if m == selectedMode then
+			idx = (i % #modeOrder) + 1
+			break
+		end
+	end
+	selectedMode = modeOrder[idx]
+	modeBtn.Text = selectedMode
+end)
+
+local addPlayerBtn = Instance.new("TextButton")
+addPlayerBtn.Size = UDim2.new(1, -10, 0, 32)
+addPlayerBtn.Position = UDim2.new(0, 0, 0, 120)
+addPlayerBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+addPlayerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+addPlayerBtn.Text = "+ Подсветить игрока"
+addPlayerBtn.Font = Enum.Font.GothamBold
+addPlayerBtn.TextSize = 11
+addPlayerBtn.Parent = addPage
+Instance.new("UICorner", addPlayerBtn).CornerRadius = UDim.new(0, 6)
+
+-- Кнопка Самоуничтожения
+local destroyBtn = Instance.new("TextButton")
+destroyBtn.Size = UDim2.new(1, -10, 0, 32)
+destroyBtn.Position = UDim2.new(0, 0, 1, -38)
+destroyBtn.BackgroundColor3 = Color3.fromRGB(180, 45, 45)
+destroyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+destroyBtn.Text = "⚠️ Самоуничтожение"
+destroyBtn.Font = Enum.Font.GothamBold
+destroyBtn.TextSize = 11
+destroyBtn.Parent = addPage
+Instance.new("UICorner", destroyBtn).CornerRadius = UDim.new(0, 6)
+
+-- Очистка визуалов игрока
+local function clearPlayerVisuals(plr)
+	if visualObjects[plr] then
+		for _, v in pairs(visualObjects[plr]) do
+			if typeof(v) == "RBXScriptConnection" then
+				v:Disconnect()
+			elseif v and v.Remove then
+				v:Remove()
+			elseif v and v.Destroy then
+				v:Destroy()
+			end
+		end
+		visualObjects[plr] = nil
+	end
+end
+
+-- Логика отрисовки визуалов
+local function createESP(plr)
+	clearPlayerVisuals(plr)
+
+	local data = trackedPlayers[plr]
+	if not data then return end
+
+	local char = plr.Character
+	if not char then return end
+
+	local objs = {}
+	visualObjects[plr] = objs
+
+	local mode = data.mode
+	local color = data.color
+
+	-- Highlight
+	if mode == "Highlight" or mode == "Full ESP" then
+		local hl = Instance.new("Highlight")
+		hl.Adornee = char
+		hl.FillColor = color
+		hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+		hl.FillTransparency = 0.5
+		hl.OutlineTransparency = 0
+		hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		hl.Parent = char
+		table.insert(objs, hl)
+	end
+
+	-- Name ESP
+	if mode == "Name ESP" or mode == "Full ESP" then
+		local head = char:FindFirstChild("Head")
+		if head then
+			local bb = Instance.new("BillboardGui")
+			bb.Adornee = head
+			bb.Size = UDim2.new(0, 150, 0, 30)
+			bb.StudsOffset = Vector3.new(0, 2, 0)
+			bb.AlwaysOnTop = true
+			bb.Parent = head
+
+			local lbl = Instance.new("TextLabel")
+			lbl.Size = UDim2.new(1, 0, 1, 0)
+			lbl.BackgroundTransparency = 1
+			lbl.TextColor3 = color
+			lbl.TextStrokeTransparency = 0
+			lbl.Font = Enum.Font.GothamBold
+			lbl.TextSize = 12
+			lbl.Text = plr.DisplayName .. " (@" .. plr.Name .. ")"
+			lbl.Parent = bb
+			table.insert(objs, bb)
+		end
+	end
+
+	-- Box ESP
+	if (mode == "Boxes" or mode == "Full ESP") and Drawing then
+		local box = Drawing.new("Square")
+		box.Visible = false
+		box.Color = color
+		box.Thickness = 1.5
+		box.Filled = false
+
+		local conn = RunService.RenderStepped:Connect(function()
+			if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+				local hrp = plr.Character.HumanoidRootPart
+				local pos, onScreen = camera:WorldToViewportPoint(hrp.Position)
+
+				if onScreen then
+					local sizeY = (camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0)).Y - camera:WorldToViewportPoint(hrp.Position + Vector3.new(0, 3, 0)).Y)
+					local sizeX = sizeY / 1.5
+
+					box.Size = Vector2.new(sizeX, sizeY)
+					box.Position = Vector2.new(pos.X - sizeX / 2, pos.Y - sizeY / 2)
+					box.Color = trackedPlayers[plr].color
+					box.Visible = true
+				else
+					box.Visible = false
+				end
+			else
+				box.Visible = false
+			end
+		end)
+
+		table.insert(objs, box)
+		table.insert(objs, conn)
+	end
+
+	-- Skeleton ESP
+	if (mode == "Skeleton" or mode == "Full ESP") and Drawing then
+		local lines = {}
+		local joints = {
+			{"Head", "UpperTorso"},
+			{"UpperTorso", "LowerTorso"},
+			{"UpperTorso", "LeftUpperArm"},
+			{"LeftUpperArm", "LeftLowerArm"},
+			{"UpperTorso", "RightUpperArm"},
+			{"RightUpperArm", "RightLowerArm"},
+			{"LowerTorso", "LeftUpperLeg"},
+			{"LeftUpperLeg", "LeftLowerLeg"},
+			{"LowerTorso", "RightUpperLeg"},
+			{"RightUpperLeg", "RightLowerLeg"}
+		}
+
+		for _ in ipairs(joints) do
+			local l = Drawing.new("Line")
+			l.Visible = false
+			l.Thickness = 1.5
+			l.Color = color
+			table.insert(lines, l)
+			table.insert(objs, l)
+		end
+
+		local conn = RunService.RenderStepped:Connect(function()
+			if plr and plr.Character then
+				for i, pair in ipairs(joints) do
+					local p1 = plr.Character:FindFirstChild(pair[1])
+					local p2 = plr.Character:FindFirstChild(pair[2])
+
+					if p1 and p2 then
+						local pos1, vis1 = camera:WorldToViewportPoint(p1.Position)
+						local pos2, vis2 = camera:WorldToViewportPoint(p2.Position)
+
+						if vis1 and vis2 then
+							lines[i].From = Vector2.new(pos1.X, pos1.Y)
+							lines[i].To = Vector2.new(pos2.X, pos2.Y)
+							lines[i].Color = trackedPlayers[plr].color
+							lines[i].Visible = true
+						else
+							lines[i].Visible = false
+						end
+					else
+						lines[i].Visible = false
+					end
+				end
+			end
+		end)
+
+		table.insert(objs, conn)
+	end
+end
+
+-- Обновление UI во вкладке "Список"
+local function refreshListUI()
+	for _, child in ipairs(listPage:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+
+	local availableColors = {
+		Color3.fromRGB(255, 50, 50),
+		Color3.fromRGB(50, 255, 100),
+		Color3.fromRGB(50, 150, 255),
+		Color3.fromRGB(255, 200, 0),
+		Color3.fromRGB(200, 50, 255)
+	}
+
+	for plr, data in pairs(trackedPlayers) do
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, -10, 0, 65)
+		card.BackgroundColor3 = Color3.fromRGB(26, 28, 36)
+		card.Parent = listPage
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 6)
+
+		local pName = Instance.new("TextLabel")
+		pName.Size = UDim2.new(0.6, 0, 0, 20)
+		pName.Position = UDim2.new(0, 8, 0, 6)
+		pName.BackgroundTransparency = 1
+		pName.Text = plr.DisplayName
+		pName.TextColor3 = Color3.fromRGB(240, 240, 245)
+		pName.Font = Enum.Font.GothamBold
+		pName.TextSize = 11
+		pName.TextXAlignment = Enum.TextXAlignment.Left
+		pName.Parent = card
+
+		local delBtn = Instance.new("TextButton")
+		delBtn.Size = UDim2.new(0, 22, 0, 22)
+		delBtn.Position = UDim2.new(1, -28, 0, 6)
+		delBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+		delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		delBtn.Text = "✕"
+		delBtn.Font = Enum.Font.GothamBold
+		delBtn.TextSize = 10
+		delBtn.Parent = card
+		Instance.new("UICorner", delBtn).CornerRadius = UDim.new(0, 4)
+
+		delBtn.MouseButton1Click:Connect(function()
+			clearPlayerVisuals(plr)
+			if data.connections then
+				for _, c in pairs(data.connections) do c:Disconnect() end
+			end
+			trackedPlayers[plr] = nil
+			refreshListUI()
+		end)
+
+		local colorBtn = Instance.new("TextButton")
+		colorBtn.Size = UDim2.new(0, 80, 0, 22)
+		colorBtn.Position = UDim2.new(0, 8, 0, 32)
+		colorBtn.BackgroundColor3 = data.color
+		colorBtn.Text = "Цвет"
+		colorBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+		colorBtn.Font = Enum.Font.GothamBold
+		colorBtn.TextSize = 10
+		colorBtn.Parent = card
+		Instance.new("UICorner", colorBtn).CornerRadius = UDim.new(0, 4)
+
+		colorBtn.MouseButton1Click:Connect(function()
+			local cIdx = 1
+			for i, c in ipairs(availableColors) do
+				if c == data.color then
+					cIdx = (i % #availableColors) + 1
+					break
+				end
+			end
+			data.color = availableColors[cIdx]
+			colorBtn.BackgroundColor3 = data.color
+			createESP(plr)
+		end)
+
+		local cModeBtn = Instance.new("TextButton")
+		cModeBtn.Size = UDim2.new(0, 110, 0, 22)
+		cModeBtn.Position = UDim2.new(0, 96, 0, 32)
+		cModeBtn.BackgroundColor3 = Color3.fromRGB(15, 16, 20)
+		cModeBtn.TextColor3 = Color3.fromRGB(88, 101, 242)
+		cModeBtn.Text = data.mode
+		cModeBtn.Font = Enum.Font.Gotham
+		cModeBtn.TextSize = 10
+		cModeBtn.Parent = card
+		Instance.new("UICorner", cModeBtn).CornerRadius = UDim.new(0, 4)
+
+		cModeBtn.MouseButton1Click:Connect(function()
+			local mIdx = 1
+			for i, m in ipairs(modeOrder) do
+				if m == data.mode then
+					mIdx = (i % #modeOrder) + 1
+					break
+				end
+			end
+			data.mode = modeOrder[mIdx]
+			cModeBtn.Text = data.mode
+			createESP(plr)
+		end)
+	end
+end
+
+-- Поиск игроков
+local function findPlayers(searchText)
+	local matches = {}
+	searchText = string.lower(searchText)
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= localPlayer then
+			if string.find(string.lower(plr.Name), searchText) or string.find(string.lower(plr.DisplayName), searchText) then
+				table.insert(matches, plr)
+			end
+		end
+	end
+	return matches
+end
+
+-- Добавление
+addPlayerBtn.MouseButton1Click:Connect(function()
+	local text = nameInput.Text
+	if text == "" then return end
+
+	local targets = findPlayers(text)
+	for _, targetPlr in ipairs(targets) do
+		if not trackedPlayers[targetPlr] then
+			local connList = {}
+			trackedPlayers[targetPlr] = {
+				color = Color3.fromRGB(88, 101, 242),
+				mode = selectedMode,
+				connections = connList
+			}
+
+			local charConn = targetPlr.CharacterAdded:Connect(function()
+				task.wait(0.5)
+				createESP(targetPlr)
+			end)
+			table.insert(connList, charConn)
+
+			createESP(targetPlr)
+		end
+	end
+
+	nameInput.Text = ""
+	refreshListUI()
+end)
+
+-- Удаление при выходе
+local remConn = Players.PlayerRemoving:Connect(function(plr)
+	if trackedPlayers[plr] then
+		clearPlayerVisuals(plr)
+		trackedPlayers[plr] = nil
+		refreshListUI()
+	end
+end)
+table.insert(globalConnections, remConn)
+
+-- Логика Функция Самоуничтожения
+destroyBtn.MouseButton1Click:Connect(function()
+	-- 1. Отключение всех глобальных событий
+	for _, c in ipairs(globalConnections) do
+		if c then c:Disconnect() end
+	end
+	globalConnections = {}
+
+	-- 2. Очистка визуалов и приватных событий игроков
+	for plr, data in pairs(trackedPlayers) do
+		clearPlayerVisuals(plr)
+		if data.connections then
+			for _, c in pairs(data.connections) do
+				if c then c:Disconnect() end
+			end
+		end
+	end
+	trackedPlayers = {}
+
+	-- 3. Удаление UI
+	if screenGui then
+		screenGui:Destroy()
+	end
+end)
