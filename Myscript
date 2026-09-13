@@ -1,0 +1,138 @@
+-- Target: Roblox (Luau), LocalScript
+-- Description: Modern UI frame with main action toggle and a full Script/GUI termination button.
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+-- 1. Main Canvas Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ANON_ControlPanel"
+screenGui.ResetOnSpawn = false
+
+-- Fallback protection: attach to CoreGui if available, else PlayerGui
+local success, _ = pcall(function()
+    screenGui.Parent = CoreGui
+end)
+if not success then
+    screenGui.Parent = playerGui
+end
+
+-- 2. Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainContainer"
+mainFrame.Size = UDim2.new(0, 320, 0, 220)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -110)
+mainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 8)
+frameCorner.Parent = mainFrame
+
+local frameStroke = Instance.new("UIStroke")
+frameStroke.Color = Color3.fromRGB(45, 45, 55)
+frameStroke.Thickness = 1.5
+frameStroke.Parent = mainFrame
+
+-- 3. Top Title Bar
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, -40, 0, 40)
+titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "CONTROL PANEL"
+titleLabel.TextColor3 = Color3.fromRGB(235, 235, 240)
+titleLabel.TextSize = 14
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = mainFrame
+
+-- 4. Unload / Destroy Button (Кнопка полного выключения)
+local destroyBtn = Instance.new("TextButton")
+destroyBtn.Name = "DestroyButton"
+destroyBtn.Size = UDim2.new(0, 30, 0, 30)
+destroyBtn.Position = UDim2.new(1, -35, 0, 5)
+destroyBtn.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
+destroyBtn.Text = "X"
+destroyBtn.TextColor3 = Color3.fromRGB(255, 75, 75)
+destroyBtn.Font = Enum.Font.GothamBold
+destroyBtn.TextSize = 14
+destroyBtn.AutoButtonColor = true
+destroyBtn.Parent = mainFrame
+
+local destroyCorner = Instance.new("UICorner")
+destroyCorner.CornerRadius = UDim.new(0, 6)
+destroyCorner.Parent = destroyBtn
+
+-- 5. Content Container
+local contentContainer = Instance.new("Frame")
+contentContainer.Size = UDim2.new(1, -30, 1, -55)
+contentContainer.Position = UDim2.new(0, 15, 0, 45)
+contentContainer.BackgroundTransparency = 1
+contentContainer.Parent = mainFrame
+
+local actionBtn = Instance.new("TextButton")
+actionBtn.Name = "ActionButton"
+actionBtn.Size = UDim2.new(1, 0, 0, 40)
+actionBtn.Position = UDim2.new(0, 0, 0, 10)
+actionBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+actionBtn.Text = "Toggle State: OFF"
+actionBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+actionBtn.Font = Enum.Font.GothamMedium
+actionBtn.TextSize = 13
+actionBtn.Parent = contentContainer
+
+local actionCorner = Instance.new("UICorner")
+actionCorner.CornerRadius = UDim.new(0, 6)
+actionCorner.Parent = actionBtn
+
+-- 6. Script Logic & Connections
+local isActive = false
+local connections = {}
+
+-- Main Action Toggle Logic
+table.insert(connections, actionBtn.MouseButton1Click:Connect(function()
+    isActive = not isActive
+    if isActive then
+        actionBtn.Text = "Toggle State: ON"
+        actionBtn.BackgroundColor3 = Color3.fromRGB(45, 85, 55)
+        actionBtn.TextColor3 = Color3.fromRGB(120, 255, 150)
+    else
+        actionBtn.Text = "Toggle State: OFF"
+        actionBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        actionBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+    end
+end))
+
+-- Full Script Shutdown / Cleanup Logic
+local function UnloadScript()
+    -- Disconnect all active events
+    for _, conn in ipairs(connections) do
+        if conn and conn.Connected then
+            conn:Disconnect()
+        end
+    end
+    table.clear(connections)
+
+    -- Smooth Fade Out animation before destroying UI
+    local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(mainFrame, tweenInfo, {
+        Size = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1
+    })
+    
+    tween:Play()
+    tween.Completed:Wait()
+    
+    -- Completely delete the GUI hierarchy from memory
+    screenGui:Destroy()
+end
+
+table.insert(connections, destroyBtn.MouseButton1Click:Connect(UnloadScript))
