@@ -1,5 +1,5 @@
--- Target: Roblox (Luau), LocalScript
--- Description: Modern UI frame with main action toggle and a full Script/GUI termination button.
+-- Target: Roblox (Luau), LocalScript / Executor
+-- Description: Modern UI panel with main action, Dex Explorer execution button, and full script unload.
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -13,7 +13,6 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ANON_ControlPanel"
 screenGui.ResetOnSpawn = false
 
--- Fallback protection: attach to CoreGui if available, else PlayerGui
 local success, _ = pcall(function()
     screenGui.Parent = CoreGui
 end)
@@ -24,8 +23,8 @@ end
 -- 2. Main Frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainContainer"
-mainFrame.Size = UDim2.new(0, 320, 0, 220)
-mainFrame.Position = UDim2.new(0.5, -160, 0.5, -110)
+mainFrame.Size = UDim2.new(0, 350, 0, 220)
+mainFrame.Position = UDim2.new(0.5, -175, 0.5, -110)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -44,7 +43,7 @@ frameStroke.Parent = mainFrame
 -- 3. Top Title Bar
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(1, -40, 0, 40)
+titleLabel.Size = UDim2.new(1, -110, 0, 40)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "CONTROL PANEL"
@@ -54,7 +53,24 @@ titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = mainFrame
 
--- 4. Unload / Destroy Button (Кнопка полного выключения)
+-- 4. DEX Button (Рядом с кнопкой выключения)
+local dexBtn = Instance.new("TextButton")
+dexBtn.Name = "DexButton"
+dexBtn.Size = UDim2.new(0, 50, 0, 30)
+dexBtn.Position = UDim2.new(1, -90, 0, 5)
+dexBtn.BackgroundColor3 = Color3.fromRGB(30, 45, 65)
+dexBtn.Text = "DEX"
+dexBtn.TextColor3 = Color3.fromRGB(100, 180, 255)
+dexBtn.Font = Enum.Font.GothamBold
+dexBtn.TextSize = 12
+dexBtn.AutoButtonColor = true
+dexBtn.Parent = mainFrame
+
+local dexCorner = Instance.new("UICorner")
+dexCorner.CornerRadius = UDim.new(0, 6)
+dexCorner.Parent = dexBtn
+
+-- 5. Unload / Destroy Button (Кнопка полного выключения)
 local destroyBtn = Instance.new("TextButton")
 destroyBtn.Name = "DestroyButton"
 destroyBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -71,7 +87,7 @@ local destroyCorner = Instance.new("UICorner")
 destroyCorner.CornerRadius = UDim.new(0, 6)
 destroyCorner.Parent = destroyBtn
 
--- 5. Content Container
+-- 6. Content Container
 local contentContainer = Instance.new("Frame")
 contentContainer.Size = UDim2.new(1, -30, 1, -55)
 contentContainer.Position = UDim2.new(0, 15, 0, 45)
@@ -83,7 +99,7 @@ actionBtn.Name = "ActionButton"
 actionBtn.Size = UDim2.new(1, 0, 0, 40)
 actionBtn.Position = UDim2.new(0, 0, 0, 10)
 actionBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-actionBtn.Text = "Toggle State: OFF"
+actionBtn.Text = "Execute Main Script"
 actionBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
 actionBtn.Font = Enum.Font.GothamMedium
 actionBtn.TextSize = 13
@@ -93,27 +109,25 @@ local actionCorner = Instance.new("UICorner")
 actionCorner.CornerRadius = UDim.new(0, 6)
 actionCorner.Parent = actionBtn
 
--- 6. Script Logic & Connections
-local isActive = false
+-- 7. Script Logic & Connections
 local connections = {}
 
--- Main Action Toggle Logic
+-- Main Script Execution (Твой loadstring)
 table.insert(connections, actionBtn.MouseButton1Click:Connect(function()
-    isActive = not isActive
-    if isActive then
-        actionBtn.Text = "Toggle State: ON"
-        actionBtn.BackgroundColor3 = Color3.fromRGB(45, 85, 55)
-        actionBtn.TextColor3 = Color3.fromRGB(120, 255, 150)
-    else
-        actionBtn.Text = "Toggle State: OFF"
-        actionBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-        actionBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
-    end
+    task.spawn(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/kikgolib/AzureLatchLineUPPPPSSSS/refs/heads/main/Myscript", true))()
+    end)
+end))
+
+-- Dex Explorer Execution
+table.insert(connections, dexBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
+    end)
 end))
 
 -- Full Script Shutdown / Cleanup Logic
 local function UnloadScript()
-    -- Disconnect all active events
     for _, conn in ipairs(connections) do
         if conn and conn.Connected then
             conn:Disconnect()
@@ -121,7 +135,6 @@ local function UnloadScript()
     end
     table.clear(connections)
 
-    -- Smooth Fade Out animation before destroying UI
     local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     local tween = TweenService:Create(mainFrame, tweenInfo, {
         Size = UDim2.new(0, 0, 0, 0),
@@ -130,8 +143,6 @@ local function UnloadScript()
     
     tween:Play()
     tween.Completed:Wait()
-    
-    -- Completely delete the GUI hierarchy from memory
     screenGui:Destroy()
 end
 
